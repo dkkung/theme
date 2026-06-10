@@ -18,10 +18,10 @@ def options(
     dashedLine=False,
     dashedRule=True,
     dashedWidth=[2, 2],
-    font="Helvetica",
+    font="Graphik",
     fontSize=7,
-    fontStyle="Light",
-    fontWeight=300,  # only multiples of 100
+    fontStyle="Normal",
+    fontWeight=400,  # only multiples of 100; 300 = light, 400 = normal/regular
     grid=False,
     gridColor="darkGray",
     legend=True,
@@ -33,6 +33,7 @@ def options(
     markStrokeOpacity=1,
     markStrokeWidth=0.50,
     chartBackgroundColor="white",
+    palette=None,
     ticks=True,
     topAndRightBorder=False,
     transparentBackground=True,
@@ -69,6 +70,9 @@ def options(
     alt.theme.options["markStrokeColor"] = markStrokeColor
     alt.theme.options["markStrokeOpacity"] = markStrokeOpacity
     alt.theme.options["markStrokeWidth"] = markStrokeWidth
+    alt.theme.options["palette"] = (
+        colors[palette] if palette is not None and palette in colors else palette
+    )  # accepts both custom-defined and vegafusion palettes
     alt.theme.options["ticks"] = ticks
     alt.theme.options["tickWidth"] = axisWidth
     alt.theme.options["topAndRightBorder"] = topAndRightBorder
@@ -1274,7 +1278,7 @@ colors = {
 
 
 @alt.theme.register("custom", enable=True)
-def custom() -> alt.theme.ThemeConfig:
+def custom():
     opts = alt.theme.options
     return {
         "background": (
@@ -1435,18 +1439,30 @@ def custom() -> alt.theme.ThemeConfig:
             },
             "range": {
                 # pass in a list outside of a dict to AVOID interpolations; define as {scheme: _} to USE interpolation, which will NOT use the maximum range of colors
-                "category": {"scheme": colors["mpl_YlGnBu"]},
+                "category": {
+                    "scheme": opts["palette"]
+                    if opts.get("palette") is not None
+                    else colors["mpl_YlGnBu"]
+                },
                 "diverging": {
-                    "scheme": colors["mpl_YlGnBu"],
+                    "scheme": opts["palette"]
+                    if opts.get("palette") is not None
+                    else colors["mpl_YlGnBu"]
                 },
                 "heatmap": {
-                    "scheme": colors["mpl_GnBu"],
+                    "scheme": opts["palette"]
+                    if opts.get("palette") is not None
+                    else colors["mpl_RdPu"]
                 },
                 "ordinal": {
-                    "scheme": colors["mpl_YlGnBu"],
+                    "scheme": opts["palette"]
+                    if opts.get("palette") is not None
+                    else colors["mpl_YlGnBu"]
                 },
                 "ramp": {
-                    "scheme": colors["mpl_GnBu"],
+                    "scheme": opts["palette"]
+                    if opts.get("palette") is not None
+                    else colors["mpl_RdPu"]
                 },
                 # "symbol": ["circle", "square", "diamond", "triangle-up", "triangle-down", "cross"],
                 # "strokeDash": [[1, 0], [4, 2], [2, 2], [4, 2, 1, 2], [1, 2]],
@@ -1518,5 +1534,4 @@ TO-DO LIST:
 - Figure out why opacity decreases (or does color change?) for area marks when line = True.
 - Figure out why the Y axis and X axis have dissimilar domain widths on large plots.
 - Maybe change legend scale size?
-- Add custom color palettes for both light and dark modes.
 """
