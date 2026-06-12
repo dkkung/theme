@@ -12,6 +12,7 @@ register.
 
 def options(
     angledX=False,
+    axisOffset=None,  # defaults to tickSize if not set
     axisWidth=0.50,
     bandPadding=0.1,
     darkmode=False,
@@ -35,6 +36,7 @@ def options(
     chartBackgroundColor="white",
     palette=None,
     ticks=True,
+    tickSize=5,
     topAndRightBorder=False,
     transparentBackground=True,
     verticalY=False,
@@ -49,6 +51,7 @@ def options(
     """
     alt.theme.options = {}  # must reset options to remove stale keys
     alt.theme.options["angledX"] = angledX
+    alt.theme.options["axisOffset"] = axisOffset  # falls back to tickSize in custom()
     alt.theme.options["axisWidth"] = axisWidth
     alt.theme.options["bandPadding"] = bandPadding
     alt.theme.options["chartBackgroundColor"] = chartBackgroundColor
@@ -74,6 +77,7 @@ def options(
         colors[palette] if palette is not None and palette in colors else palette
     )  # accepts both custom-defined and vegafusion palettes
     alt.theme.options["ticks"] = ticks
+    alt.theme.options["tickSize"] = tickSize
     alt.theme.options["tickWidth"] = axisWidth
     alt.theme.options["topAndRightBorder"] = topAndRightBorder
     alt.theme.options["transparentBackground"] = transparentBackground
@@ -1311,9 +1315,13 @@ def custom():
                 "labelFontSize": opts["fontSize"],
                 "labelFontStyle": opts["fontStyle"],
                 "labelFontWeight": opts["fontWeight"],
+                "offset": opts["axisOffset"]
+                if opts["axisOffset"] is not None
+                else opts["tickSize"],
                 "ticks": opts["ticks"],
                 "tickCap": "round",
                 "tickColor": "white" if opts["darkmode"] else "black",
+                "tickSize": opts["tickSize"],
                 "tickWidth": opts["axisWidth"],
                 "titleColor": "white" if opts["darkmode"] else "black",
                 "titleFont": opts["font"],
