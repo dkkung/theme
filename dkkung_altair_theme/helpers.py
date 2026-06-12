@@ -1,6 +1,72 @@
 import numpy as np
 import polars as pl
 
+from .colors import colors
+
+
+def palette_range(
+    name: str,
+    n: int | None = None,
+    start: int = 0,
+    stop: int | None = None,
+    step: int | None = None,
+) -> list[str]:
+    """
+    Sample colors from a named palette with control over start, stop, and spacing.
+
+    Two modes depending on which arguments are supplied:
+
+    - ``n`` mode (linspace): evenly sample ``n`` colors between ``start`` and
+      ``stop`` indices (both inclusive). If ``stop`` is omitted, uses the last
+      index in the palette.
+    - ``step`` mode (arange): return every ``step``-th color from ``start`` to
+      ``stop`` (both inclusive). ``n`` is ignored in this mode.
+
+    Parameters
+    ----------
+    name:
+        Key in the ``colors`` dict (e.g. ``"mpl_YlGnBu"``, ``"dkkung_greys"``).
+    n:
+        Number of colors to return (linspace mode). Ignored when ``step`` is set.
+    start:
+        Index of the first color to include. Defaults to 0.
+    stop:
+        Index of the last color to include (inclusive). Defaults to the last
+        index in the palette.
+    step:
+        Index step between colors (arange mode). When set, ``n`` is ignored.
+
+    Examples
+    --------
+    Four evenly-spaced colors across the full palette:
+
+        palette_range("mpl_YlGnBu", n=4)
+
+    Four evenly-spaced colors between indices 2 and 8:
+
+        palette_range("mpl_YlGnBu", n=4, start=2, stop=8)
+
+    Every second color from index 0 to 6 (returns indices 0, 2, 4, 6):
+
+        palette_range("mpl_YlGnBu", start=0, stop=6, step=2)
+    """
+    palette = colors[name]
+    total = len(palette)
+    if stop is None:
+        stop = total - 1
+
+    if step is not None:
+        indices = list(range(start, stop + 1, step))
+    elif n is not None:
+        if n == 1:
+            indices = [start]
+        else:
+            indices = [round(start + i * (stop - start) / (n - 1)) for i in range(n)]
+    else:
+        raise ValueError("Either n or step must be provided.")
+
+    return [palette[i] for i in indices]
+
 
 def beeswarm_offsets(
     y_vals,
