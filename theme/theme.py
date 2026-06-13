@@ -30,7 +30,7 @@ def options(
     legendOffset=None,  # defaults to tickSize if not set
     legendStroke=False,
     markFillColor="black",
-    markFillOpacity=0.9,
+    markFillOpacity=1.0,
     markSize=10,
     markStrokeColor="black",
     markStrokeOpacity=1,
