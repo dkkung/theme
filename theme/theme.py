@@ -13,7 +13,7 @@ register.
 
 def options(
     angledX=False,
-    axisOffset=None,  # defaults to tickSize if not set
+    axisOffset=None,  # defaults to tickSize if not set, or 0 if topAndRightBorder is True
     axisWidth=0.50,
     bandPadding=0.1,
     chartHeight=150,
@@ -55,7 +55,7 @@ def options(
     """
     alt.theme.options = {}  # must reset options to remove stale keys
     alt.theme.options["angledX"] = angledX
-    alt.theme.options["axisOffset"] = axisOffset  # falls back to tickSize in custom()
+    alt.theme.options["axisOffset"] = axisOffset
     alt.theme.options["axisWidth"] = axisWidth
     alt.theme.options["bandPadding"] = bandPadding
     alt.theme.options["chartBackgroundColor"] = chartBackgroundColor
@@ -130,9 +130,13 @@ def custom():
                 "labelFontSize": opts["fontSize"],
                 "labelFontStyle": opts["fontStyle"],
                 "labelFontWeight": opts["fontWeight"],
-                "offset": opts["axisOffset"]
-                if opts["axisOffset"] is not None
-                else opts["tickSize"],
+                "offset": 0
+                if opts["topAndRightBorder"]
+                else (
+                    opts["axisOffset"]
+                    if opts["axisOffset"] is not None
+                    else opts["tickSize"]
+                ),
                 "ticks": opts["ticks"],
                 "tickCap": "round",
                 "tickColor": "white" if opts["darkmode"] else "black",
