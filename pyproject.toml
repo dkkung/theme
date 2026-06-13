@@ -4,6 +4,17 @@ version = "0.1.0"
 description = "Custom global themes for altair."
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = [
+    "altair>=5.5.0",
+    "numpy>=1.26.0",
+    "polars>=1.19.0",
+    "scipy>=1.11.0",
+]
+
+[dependency-groups]
+dev = [
+    "vl-convert-python>=1.7.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -11,9 +22,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["theme"]
-
-dependencies = [
-    "altair>=5.5.0",
-    "numpy>=1.26.0",
-    "polars>=1.19.0",
-]
