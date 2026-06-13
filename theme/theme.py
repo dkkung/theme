@@ -147,7 +147,7 @@ def custom():
                 "titleFontSize": opts["fontSize"],
                 "titleFontStyle": opts["fontStyle"],
                 "titleFontWeight": opts["fontWeight"],
-                "translate": 0,  # default is 0.5, which causes x and y axes to be misaligned / shifted. Required for top and right border alignment.
+                "translate": 0 if opts["border"] else 0.5,  # translate=0 aligns the border stroke with the axis domain; trade-off is a ~0.5px offset between axis ticks and mark centers when border=True
             },
             "axisX": {
                 "labelAlign": (
@@ -239,6 +239,8 @@ def custom():
                 "offset": opts["legendOffset"]
                 if opts["legendOffset"] is not None
                 else opts["tickSize"],
+                "gradientLength": opts["chartHeight"] * 0.5,
+                "gradientThickness": opts["chartWidth"] * 0.05,
                 "gradientOpacity": opts["markFillOpacity"],
                 "gradientStrokeColor": "white" if opts["darkmode"] else "black",
                 "gradientStrokeWidth": opts["markStrokeWidth"],
@@ -249,6 +251,7 @@ def custom():
                 "labelFontWeight": opts["fontWeight"],
                 "strokeColor": "white" if opts["darkmode"] else "black",
                 "strokeWidth": opts["axisWidth"] if opts["legendStroke"] else 0,
+                "symbolSize": opts["fontSize"] ** 2,
                 "symbolStrokeColor": "white" if opts["darkmode"] else "black",
                 "symbolStrokeWidth": opts["markStrokeWidth"]
                 if opts["markStrokeOpacity"] > 0
@@ -268,10 +271,11 @@ def custom():
                 "strokeWidth": opts["axisWidth"] * 1.5,
             },
             "point": {
+                "filled": True,
                 "fill": opts["markFillColor"],
                 "fillOpacity": opts["markFillOpacity"],
                 "size": opts["markSize"],
-                "stroke": opts["markStrokeColor"],
+                "stroke": "white" if opts["darkmode"] else opts["markStrokeColor"],
                 "strokeOpacity": opts["markStrokeOpacity"],
                 "strokeWidth": opts["markStrokeWidth"],
             },
