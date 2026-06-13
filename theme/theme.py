@@ -357,10 +357,7 @@ def custom():
                     if opts["transparentBackground"] or opts["darkmode"]
                     else opts["viewBackgroundColor"]
                 ),
-                "stroke": "white" if opts["darkmode"] else "black",
-                "strokeOpacity": (
-                    1 if opts["border"] else 0
-                ),  # remove top and right axis borders
+                "stroke": ("white" if opts["darkmode"] else "black") if opts["border"] else None,
                 "strokeWidth": opts["axisWidth"],
             },
         },
