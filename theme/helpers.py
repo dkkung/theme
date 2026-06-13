@@ -78,7 +78,7 @@ def palette_range(
 def beeswarm_offsets(
     y_vals,
     height_px: int = 200,
-    mark_size: float = 10,
+    markSize: float = 10,
     step: float | None = None,
 ) -> np.ndarray:
     """
@@ -94,12 +94,12 @@ def beeswarm_offsets(
         Array of y values for one group (e.g. one treatment × time combination).
     height_px:
         Chart height in pixels. Should match ``.properties(height=...)``.
-    mark_size:
+    markSize:
         Altair mark size (area in sq px). Should match the ``size=`` kwarg on
         the mark. Defaults to the theme's ``markSize`` default of 10.
     step:
         x step size (px) between candidate positions. Defaults to the point
-        radius derived from ``mark_size``.
+        radius derived from ``markSize``.
 
     Returns
     -------
@@ -118,7 +118,7 @@ def beeswarm_offsets(
                 pl.Series("beeswarm_x", theme.beeswarm_offsets(
                     g["my_column"].to_numpy(),
                     height_px=200,
-                    mark_size=10,
+                    markSize=10,
                 ))
             ))
             .sort("__idx")
@@ -136,7 +136,7 @@ def beeswarm_offsets(
     if n == 0:
         return np.array([])
 
-    r = np.sqrt(mark_size / np.pi)
+    r = np.sqrt(markSize / np.pi)
     if step is None:
         step = r
 
@@ -177,7 +177,7 @@ def add_beeswarm_offsets(
     y_col: str,
     group_by: list[str],
     height_px: int = 200,
-    mark_size: float = 10,
+    markSize: float = 10,
     step: float | None = None,
     out_col: str = "beeswarm_x",
 ) -> pl.DataFrame:
@@ -198,7 +198,7 @@ def add_beeswarm_offsets(
         ``["Metadata_Treatment", "Metadata_Time"]``).
     height_px:
         Chart height in pixels.
-    mark_size:
+    markSize:
         Altair mark size (area in sq px).
     step:
         x step size (px). Defaults to the point radius.
@@ -219,7 +219,7 @@ def add_beeswarm_offsets(
             y_col="percent",
             group_by=["Metadata_Treatment", "Metadata_Time"],
             height_px=200,
-            mark_size=10,
+            markSize=10,
         )
 
         alt.Chart(df).mark_circle(size=10).encode(
@@ -238,7 +238,7 @@ def add_beeswarm_offsets(
                     beeswarm_offsets(
                         g[y_col].to_numpy(),
                         height_px=height_px,
-                        mark_size=mark_size,
+                        markSize=markSize,
                         step=step,
                     ),
                 )
@@ -249,15 +249,10 @@ def add_beeswarm_offsets(
     )
 
 
-def _format_pvalue(p: float) -> str:
+def _format_pvalue(p: float, decimals: int = 3) -> str:
     if p < 0.001:
         return "p < 0.001"
-    elif p < 0.01:
-        return "p < 0.01"
-    elif p < 0.05:
-        return "p < 0.05"
-    else:
-        return f"p = {p:.2f}"
+    return f"p = {p:.{decimals}f}"
 
 
 def pvalue_layer(
@@ -273,12 +268,14 @@ def pvalue_layer(
     n_comparisons: int = 1,
     y: float | None = None,
     y_pad: float = 5,
-    tick_height: float = 5,
-    style: str = "bracket",
+    tick_height: float = 0.5,
+    style: str = "line",
     categories: list | None = None,
-    chart_width: int = 400,
-    stroke_width: float = 0.5,
-    font_size: int = 7,
+    chartWidth: int = 400,
+    strokeWidth: float | None = None,
+    fontSize: int | None = None,
+    reverse: bool = False,
+    decimals: int = 3,
 ) -> alt.LayerChart:
     """
     Build an Altair layer with a p-value annotation between two groups.
@@ -298,11 +295,12 @@ def pvalue_layer(
         Values in ``x_col`` identifying the two groups to compare.
     test:
         Scipy test to run: ``'mannwhitneyu'``, ``'ttest_ind'``, ``'ttest_rel'``,
-        or ``'wilcoxon'``. Ignored when ``pvalue`` is provided.
+        ``'wilcoxon'``, or ``'tukey_hsd'``. Ignored when ``pvalue`` is provided.
     pvalue:
         Pre-computed p-value. Skips the statistical test entirely.
     correction:
         Multiple comparison correction: ``'bonferroni'`` or ``None``.
+        Ignored for ``tukey_hsd`` (correction is built in).
     n_comparisons:
         Total number of comparisons for Bonferroni correction.
     y:
@@ -311,20 +309,28 @@ def pvalue_layer(
     y_pad:
         Padding above the group maximum when ``y`` is auto-placed.
     tick_height:
-        Height of the bracket end ticks in data units.
+        Height of the bracket end ticks in data units. Only used when
+        ``style='bracket'``.
     style:
-        ``'bracket'`` (horizontal bar + end ticks) or ``'line'`` (bar only).
+        ``'line'`` (horizontal bar only) or ``'bracket'`` (bar + end ticks).
     categories:
         Ordered list of all x-axis categories, used to compute the midpoint
         pixel position for the text label. Inferred from ``df`` if not provided
         (sorted alphabetically, matching Vega-Lite's default nominal ordering).
-    chart_width:
+    chartWidth:
         Width of the chart in pixels. Used with ``categories`` to compute
         text x position. Should match ``.properties(width=...)``.
-    stroke_width:
-        Stroke width of bracket lines.
-    font_size:
-        Font size of the p-value label in points.
+    strokeWidth:
+        Stroke width of bracket lines. Defaults to ``axisWidth`` from
+        ``theme.options()``, or 0.5 if the theme has not been configured.
+    fontSize:
+        Font size of the p-value label in points. Defaults to ``fontSize``
+        from ``theme.options()``, or 7 if the theme has not been configured.
+    reverse:
+        If True, flips the annotation to the other side of the line/bracket —
+        text moves below the bar and ticks point upward.
+    decimals:
+        Decimal places for the p-value label when ``p >= 0.001``.
 
     Examples
     --------
@@ -354,43 +360,75 @@ def pvalue_layer(
     # --- p-value ---
     if pvalue is None:
         if df is None or x_col is None or y_col is None:
-            raise ValueError("df, x_col, and y_col are required when pvalue is not provided.")
-        a = df.filter(pl.col(x_col) == group1)[y_col].to_numpy()
-        b = df.filter(pl.col(x_col) == group2)[y_col].to_numpy()
-        _tests = {
-            "mannwhitneyu": lambda: _stats.mannwhitneyu(a, b, alternative="two-sided").pvalue,
-            "ttest_ind":    lambda: _stats.ttest_ind(a, b).pvalue,
-            "ttest_rel":    lambda: _stats.ttest_rel(a, b).pvalue,
-            "wilcoxon":     lambda: _stats.wilcoxon(a, b).pvalue,
-        }
-        if test not in _tests:
-            raise ValueError(f"Unknown test {test!r}. Choose from: {list(_tests)}")
-        pvalue = _tests[test]()
+            raise ValueError(
+                "df, x_col, and y_col are required when pvalue is not provided."
+            )
 
-    if correction == "bonferroni":
+        if test == "tukey_hsd":
+            _cats = (
+                categories
+                if categories is not None
+                else sorted(df[x_col].unique().to_list())
+            )
+            all_groups = [
+                df.filter(pl.col(x_col) == cat)[y_col].to_numpy() for cat in _cats
+            ]
+            result = _stats.tukey_hsd(*all_groups)
+            pvalue = float(result.pvalue[_cats.index(group1)][_cats.index(group2)])
+        else:
+            a = df.filter(pl.col(x_col) == group1)[y_col].to_numpy()
+            b = df.filter(pl.col(x_col) == group2)[y_col].to_numpy()
+            _tests = {
+                "mannwhitneyu": lambda: (
+                    _stats.mannwhitneyu(a, b, alternative="two-sided").pvalue
+                ),
+                "ttest_ind": lambda: _stats.ttest_ind(a, b).pvalue,
+                "ttest_rel": lambda: _stats.ttest_rel(a, b).pvalue,
+                "wilcoxon": lambda: _stats.wilcoxon(a, b).pvalue,
+            }
+            if test not in _tests:
+                raise ValueError(
+                    f"Unknown test {test!r}. Choose from: {['tukey_hsd'] + list(_tests)}"
+                )
+            pvalue = _tests[test]()
+
+    # bonferroni correction (skip for tukey_hsd — correction is built in)
+    if correction == "bonferroni" and test != "tukey_hsd":
         pvalue = min(pvalue * n_comparisons, 1.0)
 
-    label = _format_pvalue(pvalue)
+    label = _format_pvalue(pvalue, decimals=decimals)
 
     # --- y position ---
     if y is None:
         if df is None or x_col is None or y_col is None:
-            raise ValueError("y is required when df, x_col, and y_col are not provided.")
+            raise ValueError(
+                "y is required when df, x_col, and y_col are not provided."
+            )
         y = float(df.filter(pl.col(x_col).is_in([group1, group2]))[y_col].max()) + y_pad
 
     # --- categories and text x position ---
     if categories is None:
         if df is None or x_col is None:
-            raise ValueError("categories is required when df and x_col are not provided.")
+            raise ValueError(
+                "categories is required when df and x_col are not provided."
+            )
         categories = sorted(df[x_col].unique().to_list())
 
-    band_w = chart_width / len(categories)
+    band_w = chartWidth / len(categories)
     g1_idx = categories.index(group1)
     g2_idx = categories.index(group2)
     x_mid_px = ((g1_idx + g2_idx + 1) / 2) * band_w
 
-    # --- layers ---
-    _rule_kwargs = {"strokeWidth": stroke_width, "strokeDash": [0, 0]}
+    # --- resolve theme-linked defaults ---
+    if strokeWidth is None:
+        strokeWidth = alt.theme.options.get("axisWidth", 0.5)
+    if fontSize is None:
+        fontSize = alt.theme.options.get("fontSize", 7)
+
+    _rule_kwargs = {"strokeWidth": strokeWidth, "strokeDash": [0, 0]}
+
+    text_dy = 6 if reverse else -6
+    tick_y2 = y + tick_height if reverse else y - tick_height
 
     bar = (
         alt.Chart(alt.Data(values=[{"x": group1, "x2": group2, "y": y}]))
@@ -404,7 +442,7 @@ def pvalue_layer(
 
     text = (
         alt.Chart(alt.Data(values=[{"y": y, "label": label}]))
-        .mark_text(align="center", fontSize=font_size, dy=-6)
+        .mark_text(align="center", fontSize=fontSize, dy=text_dy)
         .encode(
             x=alt.value(x_mid_px),
             y=alt.Y("y:Q"),
@@ -414,7 +452,7 @@ def pvalue_layer(
 
     if style == "bracket":
         left_tick = (
-            alt.Chart(alt.Data(values=[{"x": group1, "y": y, "y2": y - tick_height}]))
+            alt.Chart(alt.Data(values=[{"x": group1, "y": y, "y2": tick_y2}]))
             .mark_rule(**_rule_kwargs)
             .encode(
                 x=alt.X("x:N"),
@@ -423,7 +461,7 @@ def pvalue_layer(
             )
         )
         right_tick = (
-            alt.Chart(alt.Data(values=[{"x": group2, "y": y, "y2": y - tick_height}]))
+            alt.Chart(alt.Data(values=[{"x": group2, "y": y, "y2": tick_y2}]))
             .mark_rule(**_rule_kwargs)
             .encode(
                 x=alt.X("x:N"),
