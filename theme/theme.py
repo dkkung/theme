@@ -1,5 +1,5 @@
 import altair as alt
-from .colors import colors
+from .palettes import colors
 
 """
 Defining custom themes using global and

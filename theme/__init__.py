@@ -1,5 +1,5 @@
 from .theme import *
-from .colors import *
+from .palettes import *
 from .transforms import *
 from .layers import *
 
