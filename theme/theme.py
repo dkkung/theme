@@ -361,6 +361,7 @@ def custom():
             "text": {
                 "color": "white" if opts["darkmode"] else "black",
                 "font": opts["font"],
+                "fontSize": opts["fontSize"],
                 "fontStyle": opts["fontStyle"],
                 "fontWeight": opts["fontWeight"],
             },

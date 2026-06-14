@@ -91,9 +91,23 @@ def mark_violin(
         density_norm = density / density.max()
 
         for order, (y, d) in enumerate(zip(y_grid, density_norm)):
-            violin_rows.append({"__group": group, "__y": float(y), "__violin_px": float(d), "__order": order})
+            violin_rows.append(
+                {
+                    "__group": group,
+                    "__y": float(y),
+                    "__violin_px": float(d),
+                    "__order": order,
+                }
+            )
         for order, (y, d) in enumerate(zip(reversed(y_grid), reversed(density_norm))):
-            violin_rows.append({"__group": group, "__y": float(y), "__violin_px": float(-d), "__order": steps + order})
+            violin_rows.append(
+                {
+                    "__group": group,
+                    "__y": float(y),
+                    "__violin_px": float(-d),
+                    "__order": steps + order,
+                }
+            )
 
     violin_df = pl.DataFrame(violin_rows)
 
@@ -125,7 +139,11 @@ def mark_violin(
                 title=x_col if legend else None,
                 legend=alt.Legend() if legend else None,
                 **(
-                    {"scale": alt.Scale(range=palette if isinstance(palette, list) else [palette])}
+                    {
+                        "scale": alt.Scale(
+                            range=palette if isinstance(palette, list) else [palette]
+                        )
+                    }
                     if palette is not None
                     else {}
                 ),
@@ -244,10 +262,13 @@ def mark_strip(
             x=x,
             y=alt.Y(f"{y_col}:Q", title=y_col),
             xOffset=alt.XOffset(f"{offset_col}:Q"),
-            color=alt.Color(f"{x_col}:N", sort=categories,
-                            title=x_col if legend else None,
-                            legend=alt.Legend() if legend else None,
-                            **({"scale": alt.Scale(range=palette)} if palette is not None else {})),
+            color=alt.Color(
+                f"{x_col}:N",
+                sort=categories,
+                title=x_col if legend else None,
+                legend=alt.Legend() if legend else None,
+                **({"scale": alt.Scale(range=palette)} if palette is not None else {}),
+            ),
         )
     )
 
@@ -269,13 +290,19 @@ def mark_strip(
         return alt.layer(points, median)
 
     if errorbar_extent == "sem":
-        error_expr = (pl.col(y_col).std() / pl.col(y_col).count().sqrt()).alias("__error")
+        error_expr = (pl.col(y_col).std() / pl.col(y_col).count().sqrt()).alias(
+            "__error"
+        )
     elif errorbar_extent == "sd":
         error_expr = pl.col(y_col).std().alias("__error")
     else:
-        raise ValueError(f"errorbar_extent must be 'sem' or 'sd', got {errorbar_extent!r}")
+        raise ValueError(
+            f"errorbar_extent must be 'sem' or 'sd', got {errorbar_extent!r}"
+        )
 
-    summary = df.group_by(x_col).agg([pl.col(y_col).median().alias("__median"), error_expr])
+    summary = df.group_by(x_col).agg(
+        [pl.col(y_col).median().alias("__median"), error_expr]
+    )
 
     errorbar_layer = (
         alt.Chart(summary)
@@ -293,7 +320,7 @@ def mark_strip(
 def save(
     chart: alt.Chart,
     filename: str,
-    ppi: int = 600,
+    ppi: int = 1200,
 ) -> None:
     """
     Save a chart as light and dark PNG and SVG files.
