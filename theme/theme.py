@@ -16,7 +16,8 @@ def options(
     axisOffset=None,  # defaults to tickSize if not set, or 0 if closed is True
     axisWidth=0.50,
     bandPadding=0.1,
-    closed=False,  # whether to add a closed border around the entire plot area
+    closed=None,   # None = auto (True if viewFill is set, else False); set explicitly to override
+    chartFill=None,
     chartHeight=150,
     chartWidth=150,
     darkmode=False,
@@ -38,13 +39,12 @@ def options(
     markStrokeColor="black",
     markStrokeOpacity=1,
     markStrokeWidth=0.50,
-    chartBackgroundColor="white",
     palette=None,
     ticks=True,
     tickSize=5,
     transparentBackground=True,
     verticalY=False,
-    viewBackgroundColor="white",
+    viewFill=None,  # setting a color auto-enables closed
     xTicks=True,
     yTicks=True,
 ):
@@ -53,12 +53,15 @@ def options(
     Call this function when plotting to custom-set the
     options to override the defaults.
     """
+    if closed is None:
+        closed = viewFill is not None  # auto-close when a view fill color is specified
+
     alt.theme.options = {}  # must reset options to remove stale keys
     alt.theme.options["angledX"] = angledX
     alt.theme.options["axisOffset"] = axisOffset
     alt.theme.options["axisWidth"] = axisWidth
     alt.theme.options["bandPadding"] = bandPadding
-    alt.theme.options["chartBackgroundColor"] = chartBackgroundColor
+    alt.theme.options["chartFill"] = chartFill
     alt.theme.options["chartHeight"] = chartHeight
     alt.theme.options["chartWidth"] = chartWidth
     alt.theme.options["darkmode"] = darkmode
@@ -91,7 +94,7 @@ def options(
     alt.theme.options["closed"] = closed
     alt.theme.options["transparentBackground"] = transparentBackground
     alt.theme.options["verticalY"] = verticalY
-    alt.theme.options["viewBackgroundColor"] = viewBackgroundColor
+    alt.theme.options["viewFill"] = viewFill
     alt.theme.options["xTicks"] = xTicks
     alt.theme.options["yTicks"] = yTicks
 
@@ -103,7 +106,7 @@ def custom():
         "background": (
             None
             if opts["transparentBackground"] or opts["darkmode"]
-            else opts["chartBackgroundColor"]
+            else opts["chartFill"]
         ),  # background of the entire view
         "config": {
             "area": {
@@ -187,9 +190,7 @@ def custom():
                     "strokeWidth": opts["markStrokeWidth"],
                 },
                 "median": {
-                    "fill": (
-                        "black" if opts["darkmode"] else opts["viewBackgroundColor"]
-                    ),
+                    "fill": ("black" if opts["darkmode"] else opts["viewFill"]),
                     "fillOpacity": opts["markFillOpacity"],
                     "size": opts["markSize"],
                     "stroke": "white" if opts["darkmode"] else opts["markStrokeColor"],
@@ -364,7 +365,7 @@ def custom():
                 "fill": (
                     None
                     if opts["transparentBackground"] or opts["darkmode"]
-                    else opts["viewBackgroundColor"]
+                    else opts["viewFill"]
                 ),
                 "stroke": ("white" if opts["darkmode"] else "black")
                 if opts["closed"]
