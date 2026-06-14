@@ -40,6 +40,7 @@ def options(
     markStrokeOpacity=1,
     markStrokeWidth=0.50,
     palette=None,
+    strokeCap="round",  # "butt" | "round" | "square"
     ticks=True,
     tickSize=5,
     transparentBackground=True,
@@ -88,6 +89,7 @@ def options(
     alt.theme.options["palette"] = (
         colors[palette] if palette is not None and palette in colors else palette
     )  # accepts both custom-defined and vegafusion palettes
+    alt.theme.options["strokeCap"] = strokeCap
     alt.theme.options["ticks"] = ticks
     alt.theme.options["tickSize"] = tickSize
     alt.theme.options["tickWidth"] = axisWidth
@@ -118,11 +120,11 @@ def custom():
             },
             "axis": {
                 "domain": True,
-                "domainCap": "round",
+                "domainCap": opts["strokeCap"],
                 "domainColor": "white" if opts["darkmode"] else "black",
                 "domainWidth": opts["axisWidth"],
                 "grid": opts["grid"],
-                "gridCap": "round",
+                "gridCap": opts["strokeCap"],
                 "gridColor": (
                     opts["gridColor"] if opts["darkmode"] else opts["gridColor"]
                 ),
@@ -141,7 +143,7 @@ def custom():
                     else opts["tickSize"]
                 ),
                 "ticks": opts["ticks"],
-                "tickCap": "round",
+                "tickCap": opts["strokeCap"],
                 "tickColor": "white" if opts["darkmode"] else "black",
                 "tickSize": opts["tickSize"],
                 "tickWidth": opts["axisWidth"],
@@ -190,7 +192,7 @@ def custom():
                     "strokeWidth": opts["markStrokeWidth"],
                 },
                 "median": {
-                    "fill": ("black" if opts["darkmode"] else opts["viewFill"]),
+                    "fill": "black" if opts["darkmode"] else "white",
                     "fillOpacity": opts["markFillOpacity"],
                     "size": opts["markSize"],
                     "stroke": "white" if opts["darkmode"] else opts["markStroke"],
@@ -269,7 +271,7 @@ def custom():
             "line": {
                 "color": "white" if opts["darkmode"] else "black",
                 "stroke": "white" if opts["darkmode"] else "black",
-                "strokeCap": "round",
+                "strokeCap": opts["strokeCap"],
                 "strokeDash": opts["dashedWidth"] if opts["dashedLine"] else [0, 0],
                 "strokeOpacity": 1,
                 "strokeWidth": opts["axisWidth"] * 1.5,
@@ -316,6 +318,7 @@ def custom():
             "rule": {
                 "color": "white" if opts["darkmode"] else "black",
                 "stroke": "white" if opts["darkmode"] else "black",
+                "strokeCap": opts["strokeCap"],
                 "strokeDash": opts["dashedWidth"] if opts["dashedRule"] else [0, 0],
                 "strokeOpacity": 1,
                 "strokeWidth": opts["axisWidth"],
