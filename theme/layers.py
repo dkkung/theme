@@ -18,7 +18,7 @@ def mark_violin(
     stroke: str | None = None,
     strokeWidth: float | None = None,
     legend: bool = False,
-    labelAngle: int = -45,
+    angledX: bool | None = None,
     steps: int = 200,
 ) -> alt.LayerChart:
     """
@@ -117,10 +117,9 @@ def mark_violin(
 
     violin_df = pl.DataFrame(violin_rows)
 
-    x_axis = alt.Axis(
-        labelAngle=labelAngle,
-        labelAlign="center" if labelAngle == 0 else "right",
-    )
+    if angledX is None:
+        angledX = alt.theme.options.get("angledX", False)
+    x_axis = alt.Axis(labelAngle=315, labelAlign="right") if angledX else alt.Axis()
 
     mark_kwargs = {
         "filled": True,
@@ -135,7 +134,7 @@ def mark_violin(
         alt.Chart(violin_df)
         .mark_line(**mark_kwargs)
         .encode(
-            x=alt.X("__group:N", sort=categories, title=x_col, axis=x_axis),
+            x=alt.X("__group:N", sort=categories, title=None, axis=x_axis),
             xOffset=alt.XOffset(
                 "__violin_px:Q",
                 scale=alt.Scale(
@@ -190,7 +189,6 @@ def mark_strip(
     legend: bool = False,
     errorbars: bool = True,
     errorbar_extent: str = "sem",
-    labelAngle: int = -45,
 ) -> alt.LayerChart:
     """
     Build an Altair layer combining jittered or beeswarm points with a median indicator.
@@ -227,9 +225,6 @@ def mark_strip(
     errorbar_extent:
         Statistic to use for error bars: ``'sem'`` (standard error of the
         mean, default) or ``'sd'`` (standard deviation).
-    labelAngle:
-        Angle of x-axis labels in degrees.
-
     Examples
     --------
     ::
@@ -255,12 +250,7 @@ def mark_strip(
     else:
         raise ValueError(f"scatter must be 'jitter' or 'beeswarm', got {scatter!r}")
 
-    x_axis = alt.Axis(
-        labelAngle=labelAngle,
-        labelAlign="center" if labelAngle == 0 else "right",
-    )
-
-    x = alt.X(f"{x_col}:N", sort=categories, title=x_col, axis=x_axis)
+    x = alt.X(f"{x_col}:N", sort=categories, title=None)
 
     points = (
         alt.Chart(df)
