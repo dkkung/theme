@@ -4,7 +4,7 @@ Custom Altair/Vega-Lite themes, perceptually uniform palettes, and chart utiliti
 
 *This is a personal project under active development, so there may be breaking changes between minor versions.*
 
-![thumbnail](assets/thumbnail_light.png)
+![thumbnail](docs/thumbnail_light.png)
 
 ## Installation
 
@@ -148,7 +148,7 @@ Setting `theme.options(palette="mypalette")` overrides all five types simultaneo
 
 ### Available palettes
 
-See the [palette gallery](https://dkkung.github.io/theme/gallery.html) for a visual overview of all palettes, or open `assets/gallery.html` locally.
+See the [palette gallery](https://dkkung.github.io/theme/gallery.html) for a visual overview of all palettes, or open `docs/gallery.html` locally.
 
 **Sequential — Single-hue** (12 stops, light → dark):
 `blues`, `greens`, `purples`, `lavenders`, `violets`, `greys`, `reds`, `rose`, `oranges`, `browns`, `yellows`, `cyans`, `magentas`, `neongreens`
@@ -363,7 +363,7 @@ uv run python scripts/build/build_gallery.py
 python scripts/build/build_gallery.py
 ```
 
-Writes `assets/gallery.html`. Open in a browser to browse all palettes across 11 chart types.
+Writes `docs/gallery.html`. Open in a browser to browse all palettes across 11 chart types.
 
 ### Exporting swatches for Adobe Illustrator
 

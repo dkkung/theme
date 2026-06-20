@@ -190,7 +190,7 @@ def build_thumbnail():
         spacing=6,
     ).resolve_scale(**_rs)
 
-    out = Path(__file__).parent.parent.parent / "assets" / "thumbnail_light.png"
+    out = Path(__file__).parent.parent.parent / "docs" / "thumbnail_light.png"
     chart.save(str(out), ppi=1200)
     print(f"saved {out}")
 
