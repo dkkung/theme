@@ -128,7 +128,7 @@ def seq_chart(palette_name: str) -> alt.Chart:
 
 
 def nuc_chart() -> alt.Chart:
-    pal = colors["nucleotide"]
+    pal = colors["nucleotides"]
     return (
         alt.Chart(nuc_df)
         .mark_text(font="Courier", fontSize=FONT_SIZE, align="left", baseline="top")

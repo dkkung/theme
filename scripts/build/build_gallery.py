@@ -2,9 +2,9 @@
 Interactive HTML gallery of all custom palettes.
 
 Usage (from project root):
-    python scripts/build_gallery.py
+    python scripts/build/build_gallery.py
 
-Output: gallery.html at the project root.
+Output: assets/gallery.html
 """
 
 import math
@@ -185,7 +185,7 @@ GROUPS = [
     (
         "Discrete",
         [
-            "nucleotide",
+            "nucleotides",
             "proteins",
         ],
     ),
@@ -672,6 +672,6 @@ if __name__ == "__main__":
 
     gallery = _build_gallery()
 
-    out = Path(__file__).parent.parent.parent / "gallery.html"
+    out = Path(__file__).parent.parent.parent / "assets" / "gallery.html"
     gallery.save(str(out))
     print(f"saved {out}")
