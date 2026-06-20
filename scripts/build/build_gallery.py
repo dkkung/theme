@@ -672,6 +672,6 @@ if __name__ == "__main__":
 
     gallery = _build_gallery()
 
-    out = Path(__file__).parent.parent.parent / "docs" / "gallery.html"
+    out = Path(__file__).parent.parent.parent / "docs" / "index.html"
     gallery.save(str(out))
     print(f"saved {out}")

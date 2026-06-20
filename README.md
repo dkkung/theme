@@ -148,7 +148,7 @@ Setting `theme.options(palette="mypalette")` overrides all five types simultaneo
 
 ### Available palettes
 
-See the [palette gallery](https://dkkung.github.io/theme/gallery.html) for a visual overview of all palettes, or open `docs/gallery.html` locally.
+See the [palette gallery](https://dkkung.github.io/theme/) for a visual overview of all palettes, or open `docs/index.html` locally.
 
 **Sequential — Single-hue** (12 stops, light → dark):
 `blues`, `greens`, `purples`, `lavenders`, `violets`, `greys`, `reds`, `rose`, `oranges`, `browns`, `yellows`, `cyans`, `magentas`, `neongreens`
@@ -363,7 +363,7 @@ uv run python scripts/build/build_gallery.py
 python scripts/build/build_gallery.py
 ```
 
-Writes `docs/gallery.html`. Open in a browser to browse all palettes across 11 chart types.
+Writes `docs/index.html`. Open in a browser to browse all palettes across 11 chart types.
 
 ### Exporting swatches for Adobe Illustrator
 
