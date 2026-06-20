@@ -2,6 +2,7 @@ import altair as alt
 
 from .palettes import colors
 
+
 """
 Defining custom themes using global and
 rational configuration values. The theme
@@ -303,27 +304,27 @@ def custom():
                 "category": {
                     "scheme": opts["palette"]
                     if opts.get("palette") is not None
-                    else colors["mpl_YlGnBu"]
+                    else colors["blues"][::2]
                 },
                 "diverging": {
                     "scheme": opts["palette"]
                     if opts.get("palette") is not None
-                    else colors["mpl_YlGnBu"]
+                    else colors["redsblues"]
                 },
                 "heatmap": {
                     "scheme": opts["palette"]
                     if opts.get("palette") is not None
-                    else colors["mpl_RdPu"]
+                    else colors["blues"]
                 },
                 "ordinal": {
                     "scheme": opts["palette"]
                     if opts.get("palette") is not None
-                    else colors["mpl_YlGnBu"]
+                    else colors["blues"]
                 },
                 "ramp": {
                     "scheme": opts["palette"]
                     if opts.get("palette") is not None
-                    else colors["mpl_RdPu"]
+                    else colors["blues"]
                 },
                 # "symbol": ["circle", "square", "diamond", "triangle-up", "triangle-down", "cross"],  # noqa: E501
                 # "strokeDash": [[1, 0], [4, 2], [2, 2], [4, 2, 1, 2], [1, 2]],
