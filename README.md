@@ -35,7 +35,7 @@ chart = (
     .encode(
         x=alt.X("x:Q"),
         y=alt.Y("y:Q"),
-        color=alt.Color("y:Q", scale=alt.Scale(range=theme.palette_range("blues"))),
+        color=alt.Color("y:Q", scale=alt.Scale(range=theme.palette("blues"))),
     )
 )
 
@@ -114,16 +114,16 @@ from theme.palettes import colors
 blues = colors["blues"]   # list of 12 hex strings, light → dark
 ```
 
-### theme.palette_range()
+### theme.palette()
 
 Samples a slice or subset from any named palette.
 
 ```python
-theme.palette_range("blues")                     # all 12 stops
-theme.palette_range("blues", n=5)                # 5 evenly-spaced stops
-theme.palette_range("blues", start=3)            # stops 3–11
-theme.palette_range("blues", stop=6, step=2)     # indices 0, 2, 4, 6
-theme.palette_range("blues", n=4, reverse=True)  # reversed
+theme.palette("blues")                     # all 12 stops
+theme.palette("blues", n=5)                # 5 evenly-spaced stops
+theme.palette("blues", start=3)            # stops 3–11
+theme.palette("blues", end=6, step=2)      # indices 0, 2, 4, 6
+theme.palette("blues", n=4, reverse=True)  # reversed
 ```
 
 | Parameter | Default | Description |
@@ -131,7 +131,7 @@ theme.palette_range("blues", n=4, reverse=True)  # reversed
 | `name` | required | Key in `colors` |
 | `n` | `None` | Return `n` evenly-spaced stops (overrides `step`) |
 | `start` | `0` | Index of the first stop to include |
-| `stop` | last | Index of the last stop to include (inclusive) |
+| `end` | last | Index of the last stop to include (inclusive) |
 | `step` | `1` | Step between indices (used when `n` is not set) |
 | `reverse` | `False` | Reverse the returned list |
 
@@ -203,7 +203,7 @@ Violin plot with an embedded boxplot.
 
 ```python
 theme.options(chartWidth=300)
-palette = theme.palette_range("lavenders", n=len(CATEGORIES))
+palette = theme.palette("lavenders", n=len(CATEGORIES))
 
 chart = theme.mark_violin(df, "group", "value", CATEGORIES, palette=palette)
 theme.save(chart, "violin")

@@ -2960,11 +2960,11 @@ colors = {
 }
 
 
-def palette_range(
+def palette(
     name: str,
     n: int | None = None,
     start: int = 0,
-    stop: int | None = None,
+    end: int | None = None,
     step: int = 1,
     reverse: bool = False,
 ) -> list[str]:
@@ -2983,7 +2983,7 @@ def palette_range(
         Number of colors to return (evenly spaced). Takes priority over ``step``.
     start:
         Index of the first color to include. Defaults to 0.
-    stop:
+    end:
         Index of the last color to include (inclusive). Defaults to the last
         index in the palette.
     step:
@@ -2995,36 +2995,36 @@ def palette_range(
     --------
     All colors in the palette:
 
-        palette_range("mpl_YlGnBu")
+        palette("mpl_YlGnBu")
 
     Last 4 colors:
 
-        palette_range("mpl_YlGnBu", start=5)
+        palette("mpl_YlGnBu", start=5)
 
     Four evenly-spaced colors across the full palette:
 
-        palette_range("mpl_YlGnBu", n=4)
+        palette("mpl_YlGnBu", n=4)
 
     Every second color from index 0 to 6 (returns indices 0, 2, 4, 6):
 
-        palette_range("mpl_YlGnBu", stop=6, step=2)
+        palette("mpl_YlGnBu", end=6, step=2)
 
     Four evenly-spaced colors, reversed:
 
-        palette_range("mpl_YlGnBu", n=4, reverse=True)
+        palette("mpl_YlGnBu", n=4, reverse=True)
     """
     palette = colors[name]
     total = len(palette)
-    if stop is None:
-        stop = total - 1
+    if end is None:
+        end = total - 1
 
     if n is not None:
         if n == 1:
             indices = [start]
         else:
-            indices = [round(start + i * (stop - start) / (n - 1)) for i in range(n)]
+            indices = [round(start + i * (end - start) / (n - 1)) for i in range(n)]
     else:
-        indices = list(range(start, stop + 1, step))
+        indices = list(range(start, end + 1, step))
 
     result = [palette[i] for i in indices]
     return result[::-1] if reverse else result
