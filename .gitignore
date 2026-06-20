@@ -53,4 +53,5 @@ pipenv
 # Project-specific #
 *.png
 *.svg
+*.json
 !docs/thumbnail_light.png

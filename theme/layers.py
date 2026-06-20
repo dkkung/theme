@@ -315,6 +315,8 @@ def save(
     chart: alt.Chart,
     filename: str,
     ppi: int = 1200,
+    description: str | None = None,
+    save_vega_spec: bool = True,
 ) -> None:
     """
     Save a chart as light and dark PNG and SVG files.
@@ -337,6 +339,11 @@ def save(
         directory, matching Altair's default behaviour.
     ppi:
         Pixel density for PNG output.
+    description:
+        Optional description embedded in the chart via ``chart.properties(description=...)``.
+        Appears as a ``<desc>`` element in SVG output.
+    save_vega_spec:
+        If ``True``, also writes ``<filename>.json`` containing the full Vega-Lite spec.
 
     Examples
     --------
@@ -353,9 +360,15 @@ def save(
     if not alt.theme.options:
         raise RuntimeError("theme.options() must be called before theme.save().")
 
+    if description is not None:
+        chart = chart.properties(description=description)
+
     base = Path(filename)
     original_darkmode = alt.theme.options.get("darkmode", False)
     original_transparent = alt.theme.options.get("transparentBackground", False)
+
+    if save_vega_spec:
+        chart.save(str(base.parent / f"{base.name}_vegalite.json"))
 
     try:
         alt.theme.options["transparentBackground"] = True

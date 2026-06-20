@@ -179,12 +179,15 @@ See the [palette gallery](https://dkkung.github.io/theme/) for a visual overview
 theme.save(chart, "plots/myplot")
 # writes: plots/myplot_light.png, plots/myplot_light.svg
 #         plots/myplot_dark.png,  plots/myplot_dark.svg
+#         plots/myplot_vegalite.json
 ```
 
-Produces light and dark PNG and SVG files from a single call. SVG output is post-processed to flatten Vega's redundant `<g>` wrappers, making it easier to navigate in Illustrator.
+Produces light and dark PNG and SVG files from a single call. SVG output is post-processed to flatten Vega's redundant `<g>` wrappers, making it easier to navigate in Illustrator. A Vega-Lite JSON spec is also saved by default for full reproducibility.
 
 ```python
-theme.save(chart, "myplot", ppi=1200)  # default PPI; reduce for faster exports
+theme.save(chart, "myplot", ppi=1200)               # default PPI; reduce for faster exports
+theme.save(chart, "myplot", save_vega_spec=False)    # skip the JSON spec
+theme.save(chart, "myplot", description="Figure 1")  # embed a description in the SVG
 ```
 
 ---
