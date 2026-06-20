@@ -380,9 +380,7 @@ def custom():
                 "continuousHeight": opts["chartHeight"],
                 "discreteWidth": opts["chartWidth"],
                 "discreteHeight": opts["chartHeight"],
-                "fill": (
-                    None if opts["transparentBackground"] or opts["darkmode"] else opts["viewFill"]
-                ),
+                "fill": None if opts["darkmode"] else opts["viewFill"],
                 "stroke": ("white" if opts["darkmode"] else "black") if opts["closed"] else None,
                 "strokeWidth": opts["axisWidth"],
             },
