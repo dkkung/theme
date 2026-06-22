@@ -183,15 +183,12 @@ def build_thumbnail():
     theme.options(chartWidth=W, chartHeight=W, legend=False)
 
     _rs = dict(color="independent", opacity="independent")
-    top_row = alt.hconcat(
+    grid = alt.concat(
         _area(KEY), _stacked_bar_no_angle(KEY), _histogram(KEY), _seq_heatmap(KEY), _heatmap(KEY),
-        spacing=6,
-    ).resolve_scale(**_rs)
-    bottom_row = alt.hconcat(
         _boxplot_no_angle(KEY), _violin_no_legend(KEY), _volcano(KEY), _scatter(KEY), _line_no_legend(KEY),
+        columns=5,
         spacing=6,
     ).resolve_scale(**_rs)
-    grid = alt.vconcat(top_row, bottom_row, spacing=6).resolve_scale(**_rs)
 
     chart = alt.vconcat(
         _swatch(KEY, KEY),
