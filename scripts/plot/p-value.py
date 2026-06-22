@@ -21,7 +21,7 @@ df = pl.DataFrame(
 
 CATEGORIES = ["Control", "Drug A", "Drug B"]
 
-theme.options(markSize=15, markFillOpacity=0.6)
+theme.options(markSize=15)
 
 chart = (
     alt.Chart(df)

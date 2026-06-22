@@ -33,11 +33,10 @@ CATEGORIES = ["Control", "Drug A", "Drug B", "Drug C", "Drug D", "Drug E"]
 
 theme.options()
 
-df = theme.add_beeswarm_offsets(
+df = theme.add_beeswarm(
     df,
     y_col="value",
     group_by=["group"],
-    step=10,
 )
 
 # palette = theme.palette("greys", n=1, start=2)

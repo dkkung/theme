@@ -26,7 +26,7 @@ df = pl.DataFrame(
 
 theme.options()
 
-chart = theme.mark_strip(df, "group", "value", CATEGORIES)
+chart = theme.mark_strip(df, "group", "value", CATEGORIES, spread=2)
 
 theme.save(chart, "strip")
 print("saved strip")
