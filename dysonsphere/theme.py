@@ -160,9 +160,7 @@ def custom():
                 ),  # keep label alignment distinct between X & Y
                 "labelAngle": 315 if opts["angledX"] else 0,
                 "ticks": True if opts["xTicks"] and opts["ticks"] else False,
-                # sub-pixel shift so axis domain line falls on a pixel boundary;
-                # 0 when closed=True so domain line aligns with view stroke
-                "translate": 0 if opts["closed"] else 0.5,
+                "translate": 0,
             },
             "axisY": {
                 "labelAlign": (
@@ -339,7 +337,7 @@ def custom():
             "scale": {
                 "bandPaddingInner": opts["bandPadding"],
                 "bandPaddingOuter": opts["bandPadding"],
-                "round": False,  # floats keep band positions precise so ticks align with marks
+                "round": False,
             },
             "rect": {
                 "fill": opts["markFill"],

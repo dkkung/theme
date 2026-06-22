@@ -1,3 +1,5 @@
+import math
+
 import altair as alt
 import numpy as np
 import polars as pl
@@ -85,9 +87,6 @@ def mark_violin(
     mark_size = alt.theme.options.get("markSize", 10)
     band_padding = alt.theme.options.get("bandPadding", 0.1)
     chart_width = alt.theme.options.get("chartWidth", 100)
-    # When xOffset is present, Vega-Lite sets paddingInner=0 on the outer band scale
-    # so step = W / (n + 2*paddingOuter) rather than W / (n + paddingInner).
-    # band_center is the xOffset value that places the violin over the boxplot center.
     step = chart_width / (len(categories) + 2 * band_padding)
     band_center = step * (0.5 - band_padding)
 
@@ -253,6 +252,27 @@ def mark_strip(
     else:
         raise ValueError(f"scatter must be 'jitter' or 'beeswarm', got {scatter!r}")
 
+    band_padding = alt.theme.options.get("bandPadding", 0.1)
+    chart_width = alt.theme.options.get("chartWidth", 100)
+    step = chart_width / (len(categories) + 2 * band_padding)
+    band_center = step * (0.5 - band_padding)
+    # Vega floors tick SVG coordinates to integers: tick_i = floor(step*(padding+i+0.5)).
+    # Subtract each group's fractional offset so marks center exactly on the floor'd tick.
+    corrections = {
+        cat: -(step * (band_padding + i + 0.5) % 1)
+        for i, cat in enumerate(categories)
+    }
+    df = df.with_columns(
+        (pl.col(offset_col) + pl.col(x_col).map_elements(
+            lambda v: corrections.get(v, 0.0), return_dtype=pl.Float64
+        )).alias(offset_col)
+    )
+    max_offset = float(df[offset_col].abs().max())
+    offset_scale = alt.Scale(
+        domain=[-max_offset, max_offset],
+        range=[band_center - max_offset, band_center + max_offset],
+    )
+
     x = alt.X(f"{x_col}:N", sort=categories, title=None)
 
     points = (
@@ -261,7 +281,7 @@ def mark_strip(
         .encode(
             x=x,
             y=alt.Y(f"{y_col}:Q", title=y_col),
-            xOffset=alt.XOffset(f"{offset_col}:Q"),
+            xOffset=alt.XOffset(f"{offset_col}:Q", scale=offset_scale),
             color=alt.Color(
                 f"{x_col}:N",
                 sort=categories,
@@ -371,16 +391,80 @@ def save(
         chart.save(str(base.parent / f"{base.name}_vegalite.json"))
 
     try:
+        import vl_convert as vlc
+
         alt.theme.options["transparentBackground"] = True
         for mode, suffix in [(False, "_light"), (True, "_dark")]:
             alt.theme.options["darkmode"] = mode
-            chart.save(str(base.parent / f"{base.name}{suffix}.png"), ppi=ppi)
             svg_path = str(base.parent / f"{base.name}{suffix}.svg")
             chart.save(svg_path)
+            _fix_tick_alignment(svg_path)
             _simplify_svg(svg_path)
+            with open(svg_path, encoding="utf-8") as f:
+                svg_content = f.read()
+            png_path = str(base.parent / f"{base.name}{suffix}.png")
+            Path(png_path).write_bytes(vlc.svg_to_png(svg_content, ppi=ppi))
     finally:
         alt.theme.options["darkmode"] = original_darkmode
         alt.theme.options["transparentBackground"] = original_transparent
+
+
+def _fix_tick_alignment(path: str) -> None:
+    """Move x-axis tick lines from Vega's floor'd integer positions to exact bar-mark centers.
+
+    Vega snaps axis tick group transforms to integers for crisp screen rendering but
+    keeps bar/rect path coordinates as floats.  At high DPI (scale ≥ 4) this produces
+    visible misalignment.  We find every bar-rect path, compute its x-center, then
+    update the nearest axis-tick line transform to match.
+    """
+    import re
+    import xml.etree.ElementTree as ET
+
+    NS = "http://www.w3.org/2000/svg"
+    ET.register_namespace("", NS)
+    ET.register_namespace("xlink", "http://www.w3.org/1999/xlink")
+
+    tree = ET.parse(path)
+    root = tree.getroot()
+
+    # Collect bar centers from paths with aria-roledescription="bar".
+    # This precisely targets mark_bar elements and excludes boxplot boxes,
+    # median ticks, and the view background rect.
+    bar_centers: list[float] = []
+    for el in root.iter(f"{{{NS}}}path"):
+        if el.get("aria-roledescription") != "bar":
+            continue
+        d = el.get("d", "")
+        m = re.match(r"M([\d.]+),[-\d.e+]+h([\d.]+)", d)
+        if m:
+            bar_centers.append(round(float(m.group(1)) + float(m.group(2)) / 2, 4))
+
+    if not bar_centers:
+        return
+
+    unique_centers = sorted(set(bar_centers))
+
+    def nearest(tick_x: float) -> float | None:
+        c = min(unique_centers, key=lambda v: abs(v - tick_x))
+        return c if abs(c - tick_x) < 2.0 else None
+
+    def fix_subtree(el: ET.Element) -> None:
+        for child in el:
+            if child.get("class", "") == "mark-rule role-axis-tick":
+                for line in child:
+                    t = line.get("transform", "")
+                    m = re.match(r"translate\((\d+(?:\.\d+)?),0\)$", t)
+                    if m:
+                        c = nearest(float(m.group(1)))
+                        if c is not None:
+                            line.set("transform", f"translate({c},0)")
+            else:
+                fix_subtree(child)
+
+    fix_subtree(root)
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(ET.tostring(root, encoding="unicode"))
 
 
 def _simplify_svg(path: str) -> None:
@@ -649,3 +733,221 @@ def pvalue_layer(
         return alt.layer(bar, left_tick, right_tick, text)
 
     return alt.layer(bar, text)
+
+
+def pvalue_layers(
+    df: pl.DataFrame,
+    x_col: str,
+    y_col: str,
+    pairs: list[tuple[str, str]],
+    *,
+    test: str = "mannwhitneyu",
+    pvalues: list[float] | None = None,
+    correction: str | None = None,
+    n_comparisons: int | None = None,
+    y_positions: list[float] | None = None,
+    y_start: float | None = None,
+    y_step: float | None = None,
+    y_pad: float = 5,
+    categories: list | None = None,
+    chartWidth: int | None = None,
+    style: str = "line",
+    tick_height: float = 0.5,
+    strokeWidth: float | None = None,
+    fontSize: int | None = None,
+    decimals: int = 3,
+) -> alt.LayerChart:
+    """
+    Build stacked p-value annotation layers for multiple group comparisons.
+
+    A batch version of :func:`pvalue_layer` that automatically stacks brackets
+    so they don't overlap. Shorter-span pairs are placed lower; pairs whose
+    x-ranges overlap are bumped to the next level.
+
+    Combine with your chart using ``+``:  ``chart + pvalue_layers(...)``.
+
+    Parameters
+    ----------
+    df:
+        Polars DataFrame containing the data.
+    x_col:
+        Column name for the grouping variable (x-axis).
+    y_col:
+        Column name for the value variable (y-axis). Used to run tests and
+        to auto-place the first bracket.
+    pairs:
+        List of ``(group1, group2)`` tuples identifying the comparisons to annotate.
+    test:
+        Scipy test to run for each pair: ``'mannwhitneyu'``, ``'ttest_ind'``,
+        ``'ttest_rel'``, ``'wilcoxon'``, or ``'tukey_hsd'``. Ignored when
+        ``pvalues`` is provided. For ``tukey_hsd``, one omnibus test is run and
+        p-values for each pair are extracted from the result matrix.
+    pvalues:
+        Pre-computed p-values, one per pair in the same order. Skips all
+        statistical tests when provided.
+    correction:
+        Multiple comparison correction applied after testing: ``'bonferroni'``
+        or ``None``. Ignored for ``tukey_hsd`` (correction is built in).
+        Also ignored when ``pvalues`` is provided.
+    n_comparisons:
+        Total number of comparisons for Bonferroni correction. Defaults to
+        ``len(pairs)`` when ``correction='bonferroni'`` and not set explicitly.
+    y_positions:
+        Explicit y positions (data units) for each bracket, one per pair in
+        the same order. When provided, overrides all auto-stacking logic
+        (``y_start``, ``y_step``, ``y_pad`` are ignored).
+    y_start:
+        Y position (data units) of the lowest bracket. Defaults to
+        ``max(y values for all annotated groups) + y_pad``.
+    y_step:
+        Vertical distance (data units) between stacking levels. Defaults to
+        ``y_pad * 2``.
+    y_pad:
+        Padding above the data maximum when ``y_start`` is auto-placed.
+    categories:
+        Ordered list of all x-axis categories. Inferred from ``df`` (sorted
+        alphabetically) when not provided.
+    chartWidth:
+        Width of the chart in pixels, used to compute text x positions.
+    style:
+        ``'line'`` (horizontal bar only) or ``'bracket'`` (bar + end ticks).
+    tick_height:
+        Height of bracket end ticks in data units. Only used when
+        ``style='bracket'``.
+    strokeWidth:
+        Stroke width of bracket lines. Inherits ``axisWidth`` from
+        ``theme.options()`` when not set.
+    fontSize:
+        Font size of p-value labels. Inherits ``fontSize`` from
+        ``theme.options()`` when not set.
+    decimals:
+        Decimal places for p-value labels when ``p >= 0.001``.
+
+    Examples
+    --------
+    Run tests and annotate three pairs::
+
+        CATEGORIES = ["Control", "Drug A", "Drug B"]
+        theme.options(chartWidth=300)
+        chart = theme.mark_strip(df, "group", "value", CATEGORIES)
+        ann = theme.pvalue_layers(
+            df, "group", "value",
+            pairs=[("Control", "Drug A"), ("Control", "Drug B"), ("Drug A", "Drug B")],
+            test="mannwhitneyu",
+            categories=CATEGORIES,
+        )
+        chart + ann
+
+    From pre-computed p-values::
+
+        ann = theme.pvalue_layers(
+            df, "group", "value",
+            pairs=[("Control", "Drug A"), ("Control", "Drug B")],
+            pvalues=[0.012, 0.341],
+            categories=CATEGORIES,
+        )
+    """
+    from scipy import stats as _stats
+
+    if not pairs:
+        raise ValueError("pairs must not be empty")
+
+    if y_positions is not None and len(y_positions) != len(pairs):
+        raise ValueError(
+            f"y_positions length ({len(y_positions)}) does not match pairs length ({len(pairs)})"
+        )
+
+    if categories is None:
+        categories = sorted(df[x_col].unique().to_list())
+
+    # --- compute p-values ---
+    if pvalues is not None:
+        if len(pvalues) != len(pairs):
+            raise ValueError(
+                f"pvalues length ({len(pvalues)}) does not match pairs length ({len(pairs)})"
+            )
+        computed_pvalues = list(pvalues)
+    elif test == "tukey_hsd":
+        all_groups = [df.filter(pl.col(x_col) == cat)[y_col].to_numpy() for cat in categories]
+        result = _stats.tukey_hsd(*all_groups)
+        computed_pvalues = [
+            float(result.pvalue[categories.index(g1)][categories.index(g2)]) for g1, g2 in pairs
+        ]
+    else:
+        _tests = {
+            "mannwhitneyu": lambda a, b: _stats.mannwhitneyu(a, b, alternative="two-sided").pvalue,
+            "ttest_ind": lambda a, b: _stats.ttest_ind(a, b).pvalue,
+            "ttest_rel": lambda a, b: _stats.ttest_rel(a, b).pvalue,
+            "wilcoxon": lambda a, b: _stats.wilcoxon(a, b).pvalue,
+        }
+        if test not in _tests:
+            raise ValueError(f"Unknown test {test!r}. Choose from: {['tukey_hsd'] + list(_tests)}")
+        computed_pvalues = []
+        for g1, g2 in pairs:
+            a = df.filter(pl.col(x_col) == g1)[y_col].to_numpy()
+            b = df.filter(pl.col(x_col) == g2)[y_col].to_numpy()
+            computed_pvalues.append(float(_tests[test](a, b)))
+
+    # bonferroni correction (skip for tukey_hsd — built in; skip when pvalues provided)
+    if correction == "bonferroni" and test != "tukey_hsd" and pvalues is None:
+        n = n_comparisons if n_comparisons is not None else len(pairs)
+        computed_pvalues = [min(p * n, 1.0) for p in computed_pvalues]
+
+    # --- y positioning ---
+    if y_positions is not None:
+        final_y = list(y_positions)
+    else:
+        if y_start is None:
+            annotated_groups = list({g for pair in pairs for g in pair})
+            y_start = float(df.filter(pl.col(x_col).is_in(annotated_groups))[y_col].max()) + y_pad
+
+        if y_step is None:
+            y_step = y_pad * 2
+
+        # Assign stacking levels via greedy interval scheduling.
+        # Shorter spans go to lower levels so narrow brackets sit closer to the data.
+        pair_indices = [(categories.index(g1), categories.index(g2)) for g1, g2 in pairs]
+        sort_order = sorted(
+            range(len(pairs)),
+            key=lambda i: abs(pair_indices[i][1] - pair_indices[i][0]),
+        )
+
+        levels: list[list[tuple[int, int]]] = []
+        pair_levels = [0] * len(pairs)
+
+        for i in sort_order:
+            lo, hi = min(pair_indices[i]), max(pair_indices[i])
+            placed = False
+            for level_idx, occupied in enumerate(levels):
+                overlaps = any(not (hi < occ_lo or lo > occ_hi) for occ_lo, occ_hi in occupied)
+                if not overlaps:
+                    occupied.append((lo, hi))
+                    pair_levels[i] = level_idx
+                    placed = True
+                    break
+            if not placed:
+                levels.append([(lo, hi)])
+                pair_levels[i] = len(levels) - 1
+
+        final_y = [y_start + pair_levels[i] * y_step for i in range(len(pairs))]
+
+    # --- build one layer per pair ---
+    layer_charts = []
+    for i, ((g1, g2), pval) in enumerate(zip(pairs, computed_pvalues)):
+        layer_charts.append(
+            pvalue_layer(
+                group1=g1,
+                group2=g2,
+                pvalue=pval,
+                y=final_y[i],
+                tick_height=tick_height,
+                style=style,
+                categories=categories,
+                chartWidth=chartWidth,
+                strokeWidth=strokeWidth,
+                fontSize=fontSize,
+                decimals=decimals,
+            )
+        )
+
+    return alt.layer(*layer_charts)
