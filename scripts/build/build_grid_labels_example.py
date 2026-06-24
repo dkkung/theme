@@ -34,9 +34,9 @@ df = pl.DataFrame(
 )
 
 CONDITIONS = {
-    "Condition 1": ["+", "-", "+", "+"],
-    "Condition 2": ["-", "-", "+", "-"],
-    "Condition 3": ["-", "-", "-", "+"],
+    "Condition 1": [True,  False, True,  True],
+    "Condition 2": [False, False, True,  False],
+    "Condition 3": [False, False, False, True],
 }
 
 SCORES = {
@@ -49,27 +49,29 @@ SCORES = {
 def build_grid_labels_example():
     theme.options()
 
-    chart = theme.mark_strip(df, "group", "value", CATEGORIES)
+    out_base = str(Path(__file__).parent.parent.parent / "docs" / "grid_labels_example")
 
-    KWARGS = dict(categories=CATEGORIES, label_align="left")
+    def make_chart() -> alt.HConcatChart:
+        chart = theme.mark_strip(df, "group", "value", CATEGORIES)
+        KWARGS = dict(categories=CATEGORIES, label_align="left")
 
-    def corner_label(style_name: str) -> alt.LayerChart:
-        label = (
-            alt.Chart(alt.Data(values=[{}]))
-            .mark_text(align="left", baseline="top", text=f'style = "{style_name}"')
-            .encode(x=alt.value(4), y=alt.value(4))
+        def corner_label(style_name: str) -> alt.LayerChart:
+            label = (
+                alt.Chart(alt.Data(values=[{}]))
+                .mark_text(align="left", baseline="top", text=f'style = "{style_name}"')
+                .encode(x=alt.value(4), y=alt.value(4))
+            )
+            return chart + label
+
+        pm = theme.add_grid_labels(
+            corner_label("plusminus"), CONDITIONS, style="plusminus", **KWARGS
         )
-        return chart + label
+        dot = theme.add_grid_labels(corner_label("dots"), CONDITIONS, style="dots", **KWARGS)
+        txt = theme.add_grid_labels(corner_label("text"), SCORES, style="text", **KWARGS)
+        return alt.hconcat(pm, dot, txt)
 
-    composed = alt.hconcat(
-        theme.add_grid_labels(corner_label("plusminus"), CONDITIONS, style="plusminus", **KWARGS),
-        theme.add_grid_labels(corner_label("dot"), CONDITIONS, style="dot", **KWARGS),
-        theme.add_grid_labels(corner_label("text"), SCORES, style="text", **KWARGS),
-    )
-
-    out = Path(__file__).parent.parent.parent / "docs" / "grid_labels_example_light.png"
-    composed.save(str(out), ppi=1200)
-    print(f"saved {out}")
+    theme.save(make_chart, out_base, ppi=1200)
+    print(f"saved {out_base}_light.png")
 
 
 if __name__ == "__main__":

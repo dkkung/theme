@@ -59,7 +59,7 @@ def save(
     Callable — rebuilt per variant so dark-mode colours are correct::
 
         theme.save(
-            lambda: theme.add_grid_labels(chart, CONDITIONS, style="dot"),
+            lambda: theme.add_grid_labels(chart, CONDITIONS, style="dots"),
             "plots/myplot",
         )
     """
@@ -183,23 +183,42 @@ def _fix_tick_alignment(path: str, band_padding: float = 0.1, chart_width: float
         if not tick_xs:
             return
 
-        # With xOffset encoding Vega sets paddingInner=0, so
-        # step = chart_width / (n + 2·paddingOuter)
-        # band_center_i = step · (paddingOuter + i + 0.5)
+        # Deduplicate: hconcat panels repeat the same tick positions for each view.
+        # Keep unique positions; the center_map lookup handles all occurrences uniformly.
+        tick_xs = list(set(tick_xs))
+
+        # Try two band-scale formulas in order:
+        #   1. paddingInner=0 (xOffset charts — Vega forces this when xOffset is used)
+        #      step = chart_width / (n + 2·paddingOuter)
+        #      band_center_i = step · (paddingOuter + i + 0.5)
+        #   2. paddingInner=band_padding (regular charts using theme bandPaddingInner default)
+        #      step = chart_width / (n·(1+paddingInner) + 2·paddingOuter - paddingInner)
+        #           = chart_width / (n + (n-1)·paddingInner + 2·paddingOuter)
+        #      band_center_i = step · (paddingOuter + i·(1+paddingInner) + 0.5)
+        # Validation ensures we only apply the fix to nominal band axes, not quantitative ones.
         n = len(tick_xs)
-        step = chart_width / (n + 2 * band_padding)
         sorted_ticks = sorted(tick_xs)
 
-        # Validate that tick positions match expected band-scale floor positions.
-        # Quantitative/time axes also produce evenly-spaced ticks but at different
-        # pixel positions — if they don't match, this is not a nominal band scale.
-        expected = [int(step * (band_padding + i + 0.5)) for i in range(n)]
-        if [int(t) for t in sorted_ticks] != expected:
-            return
+        step0 = chart_width / (n + 2 * band_padding)
+        expected0 = [int(step0 * (band_padding + i + 0.5)) for i in range(n)]
 
-        center_map = {
-            t: round(step * (band_padding + i + 0.5), 4) for i, t in enumerate(sorted_ticks)
-        }
+        step_pi = chart_width / (n + (n - 1) * band_padding + 2 * band_padding)
+        expected_pi = [
+            int(step_pi * (band_padding + i * (1 + band_padding) + 0.5)) for i in range(n)
+        ]
+
+        actual_int = [int(t) for t in sorted_ticks]
+        if actual_int == expected0:
+            center_map = {
+                t: round(step0 * (band_padding + i + 0.5), 4) for i, t in enumerate(sorted_ticks)
+            }
+        elif actual_int == expected_pi:
+            center_map = {
+                t: round(step_pi * (band_padding + i * (1 + band_padding) + 0.5), 4)
+                for i, t in enumerate(sorted_ticks)
+            }
+        else:
+            return
 
         def apply_analytic_fix(el: ET.Element) -> None:
             for child in el:
