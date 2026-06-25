@@ -228,7 +228,7 @@ def custom():
             "circle": {
                 "fill": "white",
                 "fillOpacity": opts["markFillOpacity"],
-                "size": opts["markSize"],
+                "size": opts["markSize"] / 5,
                 "stroke": "black" if opts["darkmode"] else opts["markStroke"],
                 "strokeOpacity": opts["markStrokeOpacity"],
                 "strokeWidth": opts["markStrokeWidth"],
@@ -318,7 +318,7 @@ def custom():
                 "filled": True,
                 "fill": opts["markFill"],
                 "fillOpacity": opts["markFillOpacity"],
-                "size": opts["markSize"],
+                "size": opts["markSize"] / 2,
                 "stroke": opts["markStroke"],
                 "strokeOpacity": opts["markStrokeOpacity"],
                 "strokeWidth": opts["markStrokeWidth"],
