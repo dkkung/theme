@@ -15,11 +15,12 @@ def save(
     ppi: int = 1200,
     description: str | None = None,
     save_vega_spec: bool = True,
+    background: list[str] = ["light", "dark"],
 ) -> None:
     """
     Save a chart as light and dark PNG and SVG files.
 
-    Produces four files from a single call:
+    Produces up to four files from a single call:
 
     - ``<filename>_light.png`` and ``<filename>_light.svg``
     - ``<filename>_dark.png`` and ``<filename>_dark.svg``
@@ -47,6 +48,9 @@ def save(
         Appears as a ``<desc>`` element in SVG output.
     save_vega_spec:
         If ``True``, also writes ``<filename>.json`` containing the full Vega-Lite spec.
+    background:
+        Which background variants to render. Defaults to ``["light", "dark"]``. Pass
+        ``["light"]`` or ``["dark"]`` to render only one variant.
 
     Examples
     --------
@@ -59,7 +63,7 @@ def save(
     Callable — rebuilt per variant so dark-mode colours are correct::
 
         ds.save(
-            lambda: ds.add_multilabel(chart, CONDITIONS, style="dots"),
+            lambda: ds.add_multilabel(chart, CONDITIONS, style="symbol"),
             "plots/myplot",
         )
     """
@@ -85,8 +89,13 @@ def save(
     try:
         import vl_convert as vlc
 
+        _background_map = {"light": (False, "_light"), "dark": (True, "_dark")}
+        invalid = [b for b in background if b not in _background_map]
+        if invalid:
+            raise ValueError(f"background must contain 'light' and/or 'dark', got {invalid!r}")
+
         alt.theme.options["transparentBackground"] = True
-        for mode, suffix in [(False, "_light"), (True, "_dark")]:
+        for mode, suffix in [_background_map[b] for b in background]:
             alt.theme.options["darkmode"] = mode
             # _resolve() re-calls chart() here so darkmode-sensitive colours are baked correctly
             svg_path = str(base.parent / f"{base.name}{suffix}.svg")
