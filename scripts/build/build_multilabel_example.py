@@ -66,9 +66,7 @@ def build_multilabel_example():
             )
             return chart + label
 
-        pm = ds.add_multilabel(
-            corner_label("plusminus"), CONDITIONS, style="plusminus", **KWARGS
-        )
+        pm = ds.add_multilabel(corner_label("plusminus"), CONDITIONS, style="plusminus", **KWARGS)
         dot = ds.add_multilabel(corner_label("symbol"), CONDITIONS, style="symbol", **KWARGS)
         txt = ds.add_multilabel(corner_label("text"), SCORES, style="text", **KWARGS)
         return alt.hconcat(pm, dot, txt)
