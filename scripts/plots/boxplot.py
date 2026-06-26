@@ -57,7 +57,7 @@ boxplot = base.mark_boxplot().encode(
     color=alt.Color("group:N", sort=CATEGORIES, scale=alt.Scale(range=palette), legend=None),
 )
 
-points = base.mark_circle(size=5).encode(
+points = base.mark_circle().encode(
     xOffset=alt.XOffset("beeswarm_x:Q"),
 )
 
@@ -80,7 +80,7 @@ test = {
     "Condition B": [True, True, True, True, True, True],
 }
 
-plot = ds.add_multilabel(chart, test, categories=CATEGORIES, style="symbol", palette=palette)
+plot = ds.add_multilabel(chart, test, categories=CATEGORIES, style="symbol")
 
 ds.save(plot, "boxplot")
 print("saved boxplot")
