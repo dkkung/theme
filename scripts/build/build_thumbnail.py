@@ -122,7 +122,7 @@ def _violin_no_legend(key):
         palette=palette,
         legend=False,
         angledX=False,
-        y_title=None,
+        yTitle=None,
     )
 
 

@@ -14,7 +14,7 @@ def save(
     filename: str,
     ppi: int = 1200,
     description: str | None = None,
-    save_vega_spec: bool = True,
+    saveVegaSpec: bool = True,
     background: list[str] = ["light", "dark"],
 ) -> None:
     """
@@ -46,7 +46,7 @@ def save(
     description:
         Optional description embedded in the chart via ``chart.properties(description=...)``.
         Appears as a ``<desc>`` element in SVG output.
-    save_vega_spec:
+    saveVegaSpec:
         If ``True``, also writes ``<filename>.json`` containing the full Vega-Lite spec.
     background:
         Which background variants to render. Defaults to ``["light", "dark"]``. Pass
@@ -83,7 +83,7 @@ def save(
     original_darkmode = alt.theme.options.get("darkmode", False)
     original_transparent = alt.theme.options.get("transparentBackground", False)
 
-    if save_vega_spec:
+    if saveVegaSpec:
         _resolve().save(str(base.parent / f"{base.name}_vegalite.json"))
 
     try:

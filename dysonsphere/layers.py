@@ -12,12 +12,12 @@ _UNSET = object()
 
 def mark_violin(
     df: pl.DataFrame | Any,
-    x_col: str,
-    y_col: str,
+    xCol: str,
+    yCol: str,
     categories: list[str],
     *,
-    boxplot_size: int | None = None,  # defaults to theme markSize * 0.8
-    boxplot_color: str = "black",
+    boxplotSize: int | None = None,
+    boxplotColor: str = "black",
     palette: str | list[str] | None = None,
     fillOpacity: float | None = None,
     stroke: str | None = None,
@@ -25,7 +25,7 @@ def mark_violin(
     legend: bool = False,
     angledX: bool | None = None,
     steps: int = 200,
-    y_title: str | None = _UNSET,
+    yTitle: str | None = _UNSET,
 ) -> alt.LayerChart:
     """
     Build an Altair layer combining a violin plot behind a boxplot.
@@ -37,16 +37,16 @@ def mark_violin(
     ----------
     df:
         Polars DataFrame containing the data.
-    x_col:
+    xCol:
         Column name for the grouping variable (x-axis).
-    y_col:
+    yCol:
         Column name for the value variable (y-axis).
     categories:
         Ordered list of all x-axis categories, used for positioning and
         axis labels.
-    boxplot_size:
+    boxplotSize:
         Width of the boxplot box in pixels.
-    boxplot_color:
+    boxplotColor:
         Fill color of the boxplot.
     palette:
         Fill color of all violins. When ``None``, each group inherits its
@@ -73,7 +73,7 @@ def mark_violin(
         # with optional outline and custom colors
         chart = ds.mark_violin(
             df, "group", "value", CATEGORIES,
-            boxplot_size=10,
+            boxplotSize=10,
             palette="#AAAAAA",
             stroke="black",
             strokeWidth=0.5,
@@ -94,7 +94,7 @@ def mark_violin(
 
     violin_rows = []
     for group in categories:
-        vals = df.filter(pl.col(x_col) == group)[y_col].to_numpy()
+        vals = df.filter(pl.col(xCol) == group)[yCol].to_numpy()
         y_grid = np.linspace(float(vals.min()) - 1, float(vals.max()) + 1, steps)
         kde = gaussian_kde(vals)
         density = kde(y_grid)
@@ -146,7 +146,7 @@ def mark_violin(
                     range=[band_center - mark_size * 0.75, band_center + mark_size * 0.75],
                 ),
             ),
-            y=alt.Y("__y:Q", title=y_col if y_title is _UNSET else y_title),
+            y=alt.Y("__y:Q", title=yCol if yTitle is _UNSET else yTitle),
             order=alt.Order("__order:Q"),
             color=alt.Color(
                 "__group:N",
@@ -165,14 +165,14 @@ def mark_violin(
     boxplot = (
         alt.Chart(df)
         .mark_boxplot(
-            color=boxplot_color,
+            color=boxplotColor,
             ticks=False,
-            rule={"stroke": boxplot_color},
-            **({"size": boxplot_size} if boxplot_size is not None else {}),
+            rule={"stroke": boxplotColor},
+            **({"size": boxplotSize} if boxplotSize is not None else {}),
         )
         .encode(
-            x=alt.X(f"{x_col}:N", sort=categories),
-            y=alt.Y(f"{y_col}:Q", title=y_col if y_title is _UNSET else y_title),
+            x=alt.X(f"{xCol}:N", sort=categories),
+            y=alt.Y(f"{yCol}:Q", title=yCol if yTitle is _UNSET else yTitle),
         )
     )
 
@@ -181,18 +181,18 @@ def mark_violin(
 
 def mark_strip(
     df: pl.DataFrame | Any,
-    x_col: str,
-    y_col: str,
+    xCol: str,
+    yCol: str,
     categories: list[str],
     *,
     scatter: str = "jitter",
     palette: list[str] | None = None,
-    point_size: int | None = None,
-    point_opacity: float | None = None,
+    pointSize: int | None = None,
+    pointOpacity: float | None = None,
     spread: float | None = None,
     legend: bool = False,
     errorbars: bool = True,
-    errorbar_extent: str = "sem",
+    errorbarExtent: str = "sem",
 ) -> alt.LayerChart:
     """
     Build an Altair layer combining jittered or beeswarm points with a median indicator.
@@ -204,33 +204,32 @@ def mark_strip(
     ----------
     df:
         Polars DataFrame containing the data.
-    x_col:
+    xCol:
         Column name for the grouping variable (x-axis).
-    y_col:
+    yCol:
         Column name for the value variable (y-axis).
     categories:
         Ordered list of all x-axis categories.
     scatter:
         Point distribution method: ``'jitter'`` (faster, random Gaussian offset)
         or ``'beeswarm'`` (collision-avoidance, better for smaller n).
-    point_size:
+    pointSize:
         Size of individual points. Inherits ``markSize`` from theme when ``None``.
-    point_opacity:
+    pointOpacity:
         Opacity of individual points.
     spread:
         Controls point spread in pixels. For ``'jitter'``: standard deviation
         of the Gaussian offsets (~68% of points within ±spread). For
         ``'beeswarm'``: collision radius (points placed so no two centres are
         closer than 2·spread); total width grows with n.
-    median_size:
-        Width of the median/mean indicator in pixels.
     errorbars:
         Whether to show error bars around the group mean. When ``True``,
         the mean is shown as a tick with error bars. When ``False``, the
         median is shown instead.
-    errorbar_extent:
+    errorbarExtent:
         Statistic to use for error bars: ``'sem'`` (standard error of the
         mean, default) or ``'sd'`` (standard deviation).
+
     Examples
     --------
     ::
@@ -243,16 +242,16 @@ def mark_strip(
         chart = ds.mark_strip(df, "group", "value", CATEGORIES, scatter="beeswarm")
     """
     df = ensure_polars(df)
-    if point_size is None:
-        point_size = alt.theme.options.get("markSize", 10)
-    if point_opacity is None:
-        point_opacity = alt.theme.options.get("markFillOpacity", 1.0)
+    if pointSize is None:
+        pointSize = alt.theme.options.get("markSize", 10)
+    if pointOpacity is None:
+        pointOpacity = alt.theme.options.get("markFillOpacity", 1.0)
 
     if scatter == "jitter":
         df = add_jitter(df, spread=spread)
         offset_col = "jitter_x"
     elif scatter == "beeswarm":
-        df = add_beeswarm(df, y_col=y_col, group_by=[x_col], spread=spread)
+        df = add_beeswarm(df, yCol=yCol, groupBy=[xCol], spread=spread)
         offset_col = "beeswarm_x"
     else:
         raise ValueError(f"scatter must be 'jitter' or 'beeswarm', got {scatter!r}")
@@ -267,19 +266,19 @@ def mark_strip(
         range=[band_center - max_offset, band_center + max_offset],
     )
 
-    x = alt.X(f"{x_col}:N", sort=categories, title=None)
+    x = alt.X(f"{xCol}:N", sort=categories, title=None)
 
     points = (
         alt.Chart(df)
-        .mark_circle(size=point_size, opacity=point_opacity)
+        .mark_circle(size=pointSize, opacity=pointOpacity)
         .encode(
             x=x,
-            y=alt.Y(f"{y_col}:Q", title=y_col),
+            y=alt.Y(f"{yCol}:Q", title=yCol),
             xOffset=alt.XOffset(f"{offset_col}:Q", scale=offset_scale),
             color=alt.Color(
-                f"{x_col}:N",
+                f"{xCol}:N",
                 sort=categories,
-                title=x_col if legend else None,
+                title=xCol if legend else None,
                 legend=alt.Legend() if legend else None,
                 **({"scale": alt.Scale(range=palette)} if palette is not None else {}),
             ),
@@ -296,28 +295,28 @@ def mark_strip(
         )
         .encode(
             x=x,
-            y=alt.Y(f"{y_col}:Q", title=y_col),
+            y=alt.Y(f"{yCol}:Q", title=yCol),
         )
     )
 
     if not errorbars:
         return alt.layer(points, median)
 
-    if errorbar_extent == "sem":
-        error_expr = (pl.col(y_col).std() / pl.col(y_col).count().sqrt()).alias("__error")
-    elif errorbar_extent == "sd":
-        error_expr = pl.col(y_col).std().alias("__error")
+    if errorbarExtent == "sem":
+        error_expr = (pl.col(yCol).std() / pl.col(yCol).count().sqrt()).alias("__error")
+    elif errorbarExtent == "sd":
+        error_expr = pl.col(yCol).std().alias("__error")
     else:
-        raise ValueError(f"errorbar_extent must be 'sem' or 'sd', got {errorbar_extent!r}")
+        raise ValueError(f"errorbarExtent must be 'sem' or 'sd', got {errorbarExtent!r}")
 
-    summary = df.group_by(x_col).agg([pl.col(y_col).mean().alias("__mean"), error_expr])
+    summary = df.group_by(xCol).agg([pl.col(yCol).mean().alias("__mean"), error_expr])
 
     errorbar_layer = (
         alt.Chart(summary)
         .mark_errorbar()
         .encode(
             x=x,
-            y=alt.Y("__mean:Q", title=y_col),
+            y=alt.Y("__mean:Q", title=yCol),
             yError=alt.YError("__error:Q"),
         )
     )
@@ -331,17 +330,17 @@ def add_multilabel_detached(
     *,
     order: list[str] | None = None,
     style: str = "plusminus",
-    label_align: str = "left",
-    label_padding: int = 0,
+    labelAlign: str = "left",
+    labelPadding: int = 0,
     symbol: str = "circle",
-    symbol_size: int | None = None,
+    symbolSize: int | None = None,
     palette: list[str] | None = None,
     strokeWidth: float | None = None,
-    connecting_line: bool = True,
-    y_padding: float | None = None,
+    connectingLine: bool = True,
+    yPadding: float | None = None,
     chartWidth: int | None = None,
     fontSize: int | None = None,
-    row_height: int = 14,
+    rowHeight: int = 14,
 ) -> alt.LayerChart:
     """
     Build a condition-table annotation chart to place below a strip/violin/boxplot.
@@ -375,16 +374,16 @@ def add_multilabel_detached(
         in a row. The mark shape is controlled by ``symbol``. ``"text"`` renders raw
         group values as center-aligned strings and is forced automatically when any
         value is non-bool.
-    label_align:
+    labelAlign:
         ``"left"`` (default) places row labels to the left of the grid with
         right-aligned text. ``"right"`` places them to the right with left-aligned text.
-    label_padding:
+    labelPadding:
         Gap in pixels between the plot boundary and the label text. Vega-Lite's
         default is 2. Negative values pull the labels into the plot area.
     symbol:
         Vega-Lite shape name for ``"symbol"`` style marks (e.g. ``"circle"``,
         ``"square"``, ``"diamond"``, ``"triangle-up"``). Defaults to ``"circle"``.
-    symbol_size:
+    symbolSize:
         Area (in square pixels) of each symbol. Defaults to ``markSize * 4``
         from ``ds.theme()``.
     palette:
@@ -395,11 +394,11 @@ def add_multilabel_detached(
     strokeWidth:
         Stroke width applied to dot marks and the connecting rule. Defaults
         to ``markStrokeWidth`` from ``ds.theme()``.
-    connecting_line:
+    connectingLine:
         When ``True`` (default), draws a horizontal rule spanning each consecutive
         run of ``True`` values in a row (``"symbol"`` style only). Set to ``False``
         to show symbols only.
-    y_padding:
+    yPadding:
         Inner padding between rows as a fraction of the band step (0–1).
         ``0`` means no gap; ``1`` means bands collapse to zero width.
         Defaults to Vega-Lite's band scale default of ``0.1``.
@@ -409,7 +408,7 @@ def add_multilabel_detached(
     fontSize:
         Font size for ``"text"`` style symbols and row labels. Inherits ``fontSize``
         from ``ds.theme()`` when not set.
-    row_height:
+    rowHeight:
         Height in pixels per annotation row.
 
     Notes
@@ -481,8 +480,8 @@ def add_multilabel_detached(
 
     if style not in ("plusminus", "text", "symbol"):
         raise ValueError(f"style must be 'plusminus', 'text', or 'symbol', got {style!r}")
-    if label_align not in ("left", "right"):
-        raise ValueError(f"label_align must be 'left' or 'right', got {label_align!r}")
+    if labelAlign not in ("left", "right"):
+        raise ValueError(f"labelAlign must be 'left' or 'right', got {labelAlign!r}")
 
     if chartWidth is None:
         chartWidth = alt.theme.options.get("chartWidth", 100)
@@ -501,14 +500,14 @@ def add_multilabel_detached(
     ]
     marks_df = pl.DataFrame(rows)
 
-    chart_h = len(row_order) * row_height
+    chart_h = len(row_order) * rowHeight
 
     x_enc = alt.X(
         "__category:N",
         sort=categories,
         axis=alt.Axis(labels=False, ticks=False, domain=False, title=None),
     )
-    y_scale = alt.Scale(paddingInner=y_padding) if y_padding is not None else alt.Undefined
+    y_scale = alt.Scale(paddingInner=yPadding) if yPadding is not None else alt.Undefined
     # Axis suppressed; row labels are explicit mark_text in row_labels layer below.
     # bandPosition=0.5 is explicit because per-mark defaults vary across mark types.
     y_enc = alt.Y(
@@ -519,11 +518,11 @@ def add_multilabel_detached(
         axis=alt.Axis(labels=False, ticks=False, domain=False, title=None),
     )
 
-    if label_align == "right":
-        label_x = alt.value(chartWidth + label_padding)
+    if labelAlign == "right":
+        label_x = alt.value(chartWidth + labelPadding)
     else:
-        label_x = alt.value(-label_padding)
-    label_text_align = "left" if label_align == "right" else "right"
+        label_x = alt.value(-labelPadding)
+    label_text_align = "left" if labelAlign == "right" else "right"
     label_df = pl.DataFrame({"__label": row_order})
     row_labels = (
         alt.Chart(label_df)
@@ -567,8 +566,8 @@ def add_multilabel_detached(
         negative_fill = palette[0]
         positive_color = palette[-1]
 
-    if symbol_size is None:
-        symbol_size = alt.theme.options.get("markSize", 10) * 4
+    if symbolSize is None:
+        symbolSize = alt.theme.options.get("markSize", 10) * 4
     if strokeWidth is None:
         strokeWidth = alt.theme.options.get("markStrokeWidth", 0.25)
 
@@ -584,7 +583,7 @@ def add_multilabel_detached(
             filled=True,
             color=positive_color,
             strokeWidth=strokeWidth,
-            size=symbol_size,
+            size=symbolSize,
             dy=symbol_dy,
         )
         .encode(x=x_enc, y=y_enc)
@@ -597,7 +596,7 @@ def add_multilabel_detached(
             fill=negative_fill,
             stroke=negative_stroke,
             strokeWidth=strokeWidth,
-            size=symbol_size,
+            size=symbolSize,
             dy=symbol_dy,
         )
         .encode(x=x_enc, y=y_enc)
@@ -624,7 +623,7 @@ def add_multilabel_detached(
                 {"__label": label, "__x_start": categories[run[0]], "__x_end": categories[run[-1]]}  # noqa: E501
             )
 
-    if connecting_line and line_rows:
+    if connectingLine and line_rows:
         lines_df = pl.DataFrame(line_rows)
         lines = (
             alt.Chart(lines_df)
@@ -682,7 +681,7 @@ def add_multilabel(
             {"dTAG^V-1": [False, True, True, True], "ZFC3H1 WT": [False, False, True, False]},
             categories=CATEGORIES,
             style="symbol",
-            label_align="right",
+            labelAlign="right",
         )
         ds.save(composed, "my_plot")
     """

@@ -8,8 +8,8 @@ from .utils import ensure_polars
 
 
 def beeswarm_offsets(
-    y_vals,
-    height_px: int | None = None,
+    yVals,
+    heightPx: int | None = None,
     spread: float | None = None,
 ) -> np.ndarray:
     """
@@ -17,7 +17,7 @@ def beeswarm_offsets(
 
     Algorithm
     ---------
-    1. Map y values linearly to pixel space over ``[0, height_px]``.
+    1. Map y values linearly to pixel space over ``[0, heightPx]``.
     2. Sort points by y-pixel position (ascending).
     3. For each point, try x = 0, then ±step, ±2·step, … until a position is
        found where no already-placed point is within distance 2·spread (i.e.
@@ -30,9 +30,9 @@ def beeswarm_offsets(
 
     Parameters
     ----------
-    y_vals:
+    yVals:
         Array of y values for one group.
-    height_px:
+    heightPx:
         Chart height in pixels. Should match ``.properties(height=...)``.
     spread:
         Collision radius in pixels. Points are placed so no two centres are
@@ -57,7 +57,7 @@ def beeswarm_offsets(
             .map_groups(lambda g: g.with_columns(
                 pl.Series("beeswarm_x", ds.beeswarm_offsets(
                     g["value"].to_numpy(),
-                    height_px=200,
+                    heightPx=200,
                     spread=2.0,
                 ))
             ))
@@ -71,21 +71,21 @@ def beeswarm_offsets(
             xOffset=alt.XOffset("beeswarm_x:Q"),
         )
     """
-    if height_px is None:
-        height_px = alt.theme.options.get("chartHeight", 300)
+    if heightPx is None:
+        heightPx = alt.theme.options.get("chartHeight", 300)
     if spread is None:
         spread = np.sqrt(alt.theme.options.get("markSize", 10) / np.pi)
 
-    y_vals = np.asarray(y_vals, dtype=float)
-    n = len(y_vals)
+    yVals = np.asarray(yVals, dtype=float)
+    n = len(yVals)
     if n == 0:
         return np.array([])
 
     r = spread
     d = 2 * r  # minimum centre-to-centre distance
 
-    y_min, y_max = y_vals.min(), y_vals.max()
-    y_px = (y_vals - y_min) / max(y_max - y_min, 1e-9) * height_px
+    y_min, y_max = yVals.min(), yVals.max()
+    y_px = (yVals - y_min) / max(y_max - y_min, 1e-9) * heightPx
 
     order = np.argsort(y_px)
     placed_y = np.empty(n)
@@ -124,11 +124,11 @@ def beeswarm_offsets(
 
 def add_beeswarm(
     df: pl.DataFrame | Any,
-    y_col: str,
-    group_by: list[str],
-    height_px: int | None = None,
+    yCol: str,
+    groupBy: list[str],
+    heightPx: int | None = None,
     spread: float | None = None,
-    out_col: str = "beeswarm_x",
+    outCol: str = "beeswarm_x",
 ) -> pl.DataFrame:
     """
     Add a beeswarm x-offset column to a Polars DataFrame, computed per group.
@@ -144,28 +144,28 @@ def add_beeswarm(
     ----------
     df:
         Input DataFrame.
-    y_col:
+    yCol:
         Name of the column containing y values.
-    group_by:
+    groupBy:
         Column name(s) that define each beeswarm group.
-    height_px:
+    heightPx:
         Chart height in pixels.
     spread:
         Collision radius in pixels. Defaults to ``sqrt(markSize / π)`` from
         the active theme, so points naturally match the rendered mark size.
-    out_col:
+    outCol:
         Name of the output offset column added to the DataFrame.
 
     Returns
     -------
     polars.DataFrame
-        Original DataFrame with an additional ``out_col`` column.
+        Original DataFrame with an additional ``outCol`` column.
 
     Examples
     --------
     ::
 
-        df = ds.add_beeswarm(df, y_col="value", group_by=["group"], spread=2.0)
+        df = ds.add_beeswarm(df, yCol="value", groupBy=["group"], spread=2.0)
 
         alt.Chart(df).mark_circle().encode(
             x=alt.X("group:N"),
@@ -176,14 +176,14 @@ def add_beeswarm(
     df = ensure_polars(df)
     return (
         df.with_row_index("__beeswarm_idx")
-        .group_by(group_by)
+        .group_by(groupBy)
         .map_groups(
             lambda g: g.with_columns(
                 pl.Series(
-                    out_col,
+                    outCol,
                     beeswarm_offsets(
-                        g[y_col].to_numpy(),
-                        height_px=height_px,
+                        g[yCol].to_numpy(),
+                        heightPx=heightPx,
                         spread=spread,
                     ),
                 )
@@ -197,7 +197,7 @@ def add_beeswarm(
 def add_jitter(
     df: pl.DataFrame | Any,
     spread: float | None = None,
-    out_col: str = "jitter_x",
+    outCol: str = "jitter_x",
     seed: int | None = 2022_07_01,
 ) -> pl.DataFrame:
     """
@@ -215,7 +215,7 @@ def add_jitter(
         Input DataFrame.
     spread:
         Standard deviation of the jitter in pixels. Defaults to 5.0.
-    out_col:
+    outCol:
         Name of the output offset column added to the DataFrame.
     seed:
         Optional random seed for reproducibility.
@@ -223,7 +223,7 @@ def add_jitter(
     Returns
     -------
     polars.DataFrame
-        Original DataFrame with an additional ``out_col`` column.
+        Original DataFrame with an additional ``outCol`` column.
 
     Examples
     --------
@@ -241,4 +241,4 @@ def add_jitter(
     if spread is None:
         spread = 2.0
     rng = np.random.default_rng(seed)
-    return df.with_columns(pl.Series(out_col, rng.normal(0, spread, len(df))))
+    return df.with_columns(pl.Series(outCol, rng.normal(0, spread, len(df))))

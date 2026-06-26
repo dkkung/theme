@@ -1,7 +1,7 @@
 """
 Generates docs/pvalue_example_light.png — the README preview for add_pvalue.
 
-Shows label_style="p" on the left and label_style="asterisks" on the right,
+Shows labelStyle="p" on the left and labelStyle="asterisks" on the right,
 both annotating the same three-group comparison on a boxplot.
 
 Usage (from project root):
@@ -56,25 +56,25 @@ def build_pvalue_example():
 
     pvalue_kwargs = dict(
         df=df,
-        x_col="group",
-        y_col="value",
+        xCol="group",
+        yCol="value",
         pairs=PAIRS,
         categories=CATEGORIES,
-        y_pad=0.25,
-        y_step=0.6,
+        yPad=0.25,
+        yStep=0.6,
     )
 
     title_params = dict(orient="top", anchor="start", offset=4)
     fontSize = alt.theme.options.get("fontSize", 7)
 
-    left = (left_base + ds.add_pvalue(**pvalue_kwargs, label_style="p")).properties(
+    left = (left_base + ds.add_pvalue(**pvalue_kwargs, labelStyle="p")).properties(
         title=alt.TitleParams(
             ['labelStyle="p"', 'bracketStyle="line"'], fontSize=fontSize, **title_params
         )
     )
     right = (
         right_base
-        + ds.add_pvalue(**pvalue_kwargs, label_style="asterisks", bracket_style="bracket")
+        + ds.add_pvalue(**pvalue_kwargs, labelStyle="asterisks", bracketStyle="bracket")
     ).properties(
         title=alt.TitleParams(
             ['labelStyle="asterisks"', 'bracketStyle="bracket"'], fontSize=fontSize, **title_params

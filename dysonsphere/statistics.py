@@ -170,23 +170,23 @@ def _pvalue_layer(
 
 def add_pvalue(
     df: pl.DataFrame | Any,
-    x_col: str,
-    y_col: str,
+    xCol: str,
+    yCol: str,
     pairs: list[tuple[str, str]],
     *,
     test: str = "mannwhitneyu",
     pvalues: list[float] | None = None,
     correction: str | None = None,
-    n_comparisons: int | None = None,
-    y_positions: list[float] | None = None,
-    y_start: float | None = None,
-    y_step: float | None = None,
-    y_pad: float = 5,
+    nComparisons: int | None = None,
+    yPositions: list[float] | None = None,
+    yStart: float | None = None,
+    yStep: float | None = None,
+    yPad: float = 5,
     categories: list | None = None,
     chartWidth: int | None = None,
-    bracket_style: str = "line",
-    label_style: str = "p",
-    tick_height: float | None = None,
+    bracketStyle: str = "line",
+    labelStyle: str = "p",
+    tickHeight: float | None = None,
     strokeWidth: float | None = None,
     fontSize: int | None = None,
     reverse: list[tuple[str, str]] | None = None,
@@ -205,9 +205,9 @@ def add_pvalue(
     ----------
     df:
         Polars DataFrame containing the data.
-    x_col:
+    xCol:
         Column name for the grouping variable (x-axis).
-    y_col:
+    yCol:
         Column name for the value variable (y-axis). Used to run tests and
         to auto-place the first bracket.
     pairs:
@@ -225,35 +225,36 @@ def add_pvalue(
         Multiple comparison correction applied after testing: ``'bonferroni'``
         or ``None``. Ignored for ``tukey_hsd`` (correction is built in).
         Also ignored when ``pvalues`` is provided.
-    n_comparisons:
+    nComparisons:
         Total number of comparisons for Bonferroni correction. Defaults to
         ``len(pairs)`` when ``correction='bonferroni'`` and not set explicitly.
-    y_positions:
+    yPositions:
         Explicit y positions (data units) for each bracket, one per pair in
         the same order. When provided, overrides all auto-stacking logic
-        (``y_start``, ``y_step``, ``y_pad`` are ignored).
-    y_start:
+        (``yStart``, ``yStep``, ``yPad`` are ignored).
+    yStart:
         Y position (data units) of the lowest bracket. Defaults to
-        ``max(y values for all annotated groups) + y_pad``.
-    y_step:
+        ``max(y values for all annotated groups) + yPad``.
+    yStep:
         Vertical distance (data units) between stacking levels. Defaults to
-        ``y_pad * 2``.
-    y_pad:
-        Padding above the data maximum when ``y_start`` is auto-placed.
+        ``yPad * 2``.
+    yPad:
+        Padding above the data maximum when ``yStart`` is auto-placed.
     categories:
         Ordered list of all x-axis categories. Inferred from ``df`` (sorted
         alphabetically) when not provided.
     chartWidth:
         Width of the chart in pixels, used to compute text x positions.
-    bracket_style:
+        Auto-detected from ``ds.theme()`` when not set.
+    bracketStyle:
         ``'line'`` (horizontal bar only) or ``'bracket'`` (bar + end ticks).
-    label_style:
+    labelStyle:
         ``'p'`` (default) renders ``p = 0.012`` / ``p < 0.001``. ``'asterisks'``
         renders ``*`` / ``**`` / ``***`` / ``ns``.
-    tick_height:
+    tickHeight:
         Height of bracket end ticks in data units. Defaults to
-        ``y_step * 0.25`` so ticks scale naturally with bracket spacing.
-        Only used when ``bracket_style='bracket'``.
+        ``yStep * 0.25`` so ticks scale naturally with bracket spacing.
+        Only used when ``bracketStyle='bracket'``.
     strokeWidth:
         Stroke width of bracket lines. Inherits ``axisWidth`` from
         ``ds.theme()`` when not set.
@@ -264,18 +265,18 @@ def add_pvalue(
         List of ``(group1, group2)`` tuples identifying brackets to flip —
         text moves below the bar and ticks point upward.
     decimals:
-        Decimal places for p-value labels when ``label_style='p'`` and
+        Decimal places for p-value labels when ``labelStyle='p'`` and
         ``p >= 0.001``.
 
     Examples
     --------
     Single comparison::
 
-        CATEGORIES = ["Control", "Drug A", "Drug B"]
+        CATEGORIES = ["A", "B", "C"]
         chart = ds.mark_strip(df, "group", "value", CATEGORIES)
         chart + ds.add_pvalue(
             df, "group", "value",
-            pairs=[("Control", "Drug A")],
+            pairs=[("A", "B")],
             categories=CATEGORIES,
         )
 
@@ -283,7 +284,7 @@ def add_pvalue(
 
         chart + ds.add_pvalue(
             df, "group", "value",
-            pairs=[("Control", "Drug A"), ("Control", "Drug B"), ("Drug A", "Drug B")],
+            pairs=[("A", "B"), ("A", "C"), ("B", "C")],
             test="mannwhitneyu",
             categories=CATEGORIES,
         )
@@ -292,7 +293,7 @@ def add_pvalue(
 
         chart + ds.add_pvalue(
             df, "group", "value",
-            pairs=[("Control", "Drug A"), ("Control", "Drug B")],
+            pairs=[("A", "B"), ("A", "C")],
             pvalues=[0.012, 0.341],
             categories=CATEGORIES,
         )
@@ -303,13 +304,13 @@ def add_pvalue(
     if not pairs:
         raise ValueError("pairs must not be empty")
 
-    if y_positions is not None and len(y_positions) != len(pairs):
+    if yPositions is not None and len(yPositions) != len(pairs):
         raise ValueError(
-            f"y_positions length ({len(y_positions)}) does not match pairs length ({len(pairs)})"
+            f"yPositions length ({len(yPositions)}) does not match pairs length ({len(pairs)})"
         )
 
     if categories is None:
-        categories = sorted(df[x_col].unique().to_list())
+        categories = sorted(df[xCol].unique().to_list())
 
     # --- compute p-values ---
     if pvalues is not None:
@@ -319,7 +320,7 @@ def add_pvalue(
             )
         computed_pvalues = list(pvalues)
     elif test == "tukey_hsd":
-        all_groups = [df.filter(pl.col(x_col) == cat)[y_col].to_numpy() for cat in categories]
+        all_groups = [df.filter(pl.col(xCol) == cat)[yCol].to_numpy() for cat in categories]
         result = _stats.tukey_hsd(*all_groups)
         computed_pvalues = [
             float(result.pvalue[categories.index(g1)][categories.index(g2)]) for g1, g2 in pairs
@@ -335,30 +336,30 @@ def add_pvalue(
             raise ValueError(f"Unknown test {test!r}. Choose from: {['tukey_hsd'] + list(_tests)}")
         computed_pvalues = []
         for g1, g2 in pairs:
-            a = df.filter(pl.col(x_col) == g1)[y_col].to_numpy()
-            b = df.filter(pl.col(x_col) == g2)[y_col].to_numpy()
+            a = df.filter(pl.col(xCol) == g1)[yCol].to_numpy()
+            b = df.filter(pl.col(xCol) == g2)[yCol].to_numpy()
             computed_pvalues.append(float(_tests[test](a, b)))
 
     # bonferroni correction (skip for tukey_hsd — built in; skip when pvalues provided)
     if correction == "bonferroni" and test != "tukey_hsd" and pvalues is None:
-        n = n_comparisons if n_comparisons is not None else len(pairs)
+        n = nComparisons if nComparisons is not None else len(pairs)
         computed_pvalues = [min(p * n, 1.0) for p in computed_pvalues]
 
     # --- y positioning ---
-    if y_positions is not None:
-        final_y = list(y_positions)
-        if tick_height is None:
-            tick_height = (y_pad * 2) * 0.25
+    if yPositions is not None:
+        final_y = list(yPositions)
+        if tickHeight is None:
+            tickHeight = (yPad * 2) * 0.25
     else:
-        if y_start is None:
+        if yStart is None:
             annotated_groups = list({g for pair in pairs for g in pair})
-            y_start = float(df.filter(pl.col(x_col).is_in(annotated_groups))[y_col].max()) + y_pad
+            yStart = float(df.filter(pl.col(xCol).is_in(annotated_groups))[yCol].max()) + yPad
 
-        if y_step is None:
-            y_step = y_pad * 2
+        if yStep is None:
+            yStep = yPad * 2
 
-        if tick_height is None:
-            tick_height = y_step * 0.25
+        if tickHeight is None:
+            tickHeight = yStep * 0.25
 
         # Assign stacking levels via greedy interval scheduling.
         # Shorter spans go to lower levels so narrow brackets sit closer to the data.
@@ -385,7 +386,7 @@ def add_pvalue(
                 levels.append([(lo, hi)])
                 pair_levels[i] = len(levels) - 1
 
-        final_y = [y_start + pair_levels[i] * y_step for i in range(len(pairs))]
+        final_y = [yStart + pair_levels[i] * yStep for i in range(len(pairs))]
 
     # --- build one layer per pair ---
     layer_charts = []
@@ -396,9 +397,9 @@ def add_pvalue(
                 group2=g2,
                 pvalue=pval,
                 y=final_y[i],
-                tick_height=tick_height,
-                bracket_style=bracket_style,
-                label_style=label_style,
+                tick_height=tickHeight,
+                bracket_style=bracketStyle,
+                label_style=labelStyle,
                 categories=categories,
                 chartWidth=chartWidth,
                 strokeWidth=strokeWidth,

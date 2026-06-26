@@ -56,7 +56,7 @@ def build_multilabel_example():
 
     def make_chart() -> alt.HConcatChart:
         chart = ds.mark_strip(df, "group", "value", CATEGORIES)
-        KWARGS = dict(categories=CATEGORIES, label_align="left")
+        KWARGS = dict(categories=CATEGORIES, labelAlign="left")
 
         def corner_label(style_name: str) -> alt.LayerChart:
             label = (

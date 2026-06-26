@@ -18,7 +18,7 @@ pip install dysonsphere
 
 Requires Python 3.11+. Dependencies: `altair`, `numpy`, `polars`, `scipy`.
 
-All functions that accept a DataFrame support both **Polars** and **pandas** DataFrames. A pandas DataFrame is automatically converted to Polars at the boundary via `ds.ensure_polars()`. Pandas is not a declared dependency — it only needs to be installed if you actually pass one in. Note that `pandas` with string/object columns additionally requires `pyarrow` for the conversion (a Polars requirement, not dysonsphere's).
+All functions that accept a DataFrame support both **Polars** and **pandas** DataFrames. A pandas DataFrame is automatically converted to Polars at the boundary via `ds.ensure_polars()`. Pandas is not a declared dependency — it only needs to be installed if you actually pass one in.
 
 ---
 
@@ -194,7 +194,7 @@ Produces light and dark PNG and SVG files from a single call. SVG output is post
 
 ```python
 ds.save(chart, "myplot", ppi=1200)                    # default PPI; reduce for faster exports
-ds.save(chart, "myplot", save_vega_spec=False)         # skip the JSON spec
+ds.save(chart, "myplot", saveVegaSpec=False)           # skip the JSON spec
 ds.save(chart, "myplot", description="Figure 1")       # embed a description in the SVG
 ds.save(chart, "myplot", background=["light"])         # light variant only
 ds.save(chart, "myplot", background=["dark"])          # dark variant only
@@ -221,7 +221,7 @@ alt.Chart(df).mark_circle().encode(
 | Parameter | Default | Description |
 |---|---|---|
 | `spread` | `2.0` | Standard deviation of jitter in pixels. Pass `None` to use `2.0` |
-| `out_col` | `"jitter_x"` | Output column name |
+| `outCol` | `"jitter_x"` | Output column name |
 | `seed` | `20220701` | Random seed |
 
 ### dysonsphere.add_beeswarm()
@@ -229,7 +229,7 @@ alt.Chart(df).mark_circle().encode(
 Computes collision-avoiding x-offsets per group using an analytic method. Points are sorted by y position and placed greedily from the centre outward: for each point, the forbidden x intervals imposed by already-placed neighbours are computed exactly as `px ± √((2·spread)² − dy²)`, and the candidate closest to 0 outside all intervals is chosen. Better than jitter for small n; total width grows with n.
 
 ```python
-df = ds.add_beeswarm(df, y_col="value", group_by=["group"], spread=2.0)
+df = ds.add_beeswarm(df, yCol="value", groupBy=["group"], spread=2.0)
 
 alt.Chart(df).mark_circle().encode(
     x=alt.X("group:N"),
@@ -240,11 +240,11 @@ alt.Chart(df).mark_circle().encode(
 
 | Parameter | Default | Description |
 |---|---|---|
-| `y_col` | required | Value column |
-| `group_by` | required | Column(s) defining each beeswarm group |
+| `yCol` | required | Value column |
+| `groupBy` | required | Column(s) defining each beeswarm group |
 | `spread` | `√(markSize/π)` | Collision radius in pixels — defaults to the rendered point radius from the active theme |
-| `height_px` | theme `chartHeight` | Chart height in pixels |
-| `out_col` | `"beeswarm_x"` | Output column name |
+| `heightPx` | theme `chartHeight` | Chart height in pixels |
+| `outCol` | `"beeswarm_x"` | Output column name |
 
 ---
 
@@ -273,7 +273,7 @@ chart + ds.add_pvalue(
 From pre-computed p-values, with explicit bracket positions:
 
 ```python
-ds.add_pvalue(..., pvalues=[0.002, 0.031], y_positions=[4.5, 5.2])
+ds.add_pvalue(..., pvalues=[0.002, 0.031], yPositions=[4.5, 5.2])
 ```
 
 **Parameters**
@@ -281,23 +281,23 @@ ds.add_pvalue(..., pvalues=[0.002, 0.031], y_positions=[4.5, 5.2])
 | Parameter | Default | Description |
 |---|---|---|
 | `df` | required | Polars or pandas DataFrame |
-| `x_col`, `y_col` | required | Column names for groups and values |
+| `xCol`, `yCol` | required | Column names for groups and values |
 | `pairs` | required | List of `(group1, group2)` tuples to annotate |
 | `test` | `"mannwhitneyu"` | Statistical test: `"mannwhitneyu"`, `"ttest_ind"`, `"ttest_rel"`, `"wilcoxon"`, `"tukey_hsd"` |
 | `pvalues` | `None` | Pre-computed p-values, one per pair (skips all tests) |
 | `correction` | `None` | `"bonferroni"` or `None`. Ignored for `tukey_hsd` |
-| `n_comparisons` | `len(pairs)` | Number of comparisons for Bonferroni correction |
-| `y_positions` | `None` | Explicit y positions per bracket (overrides auto-stacking) |
-| `y_start` | auto | Y position of the lowest bracket |
-| `y_step` | `y_pad × 2` | Vertical distance between stacking levels |
-| `y_pad` | `5` | Padding above data max when y_start is auto-placed |
-| `bracket_style` | `"line"` | `"line"` (bar only) or `"bracket"` (bar + end ticks) |
-| `label_style` | `"p"` | `"p"` renders `p = 0.012` / `p < 0.001`; `"asterisks"` renders `*` / `**` / `***` / `ns` |
-| `tick_height` | `0.5` | End tick height in data units (only for `bracket_style="bracket"`) |
+| `nComparisons` | `len(pairs)` | Number of comparisons for Bonferroni correction |
+| `yPositions` | `None` | Explicit y positions per bracket (overrides auto-stacking) |
+| `yStart` | auto | Y position of the lowest bracket |
+| `yStep` | `yPad × 2` | Vertical distance between stacking levels |
+| `yPad` | `5` | Padding above data max when yStart is auto-placed |
+| `bracketStyle` | `"line"` | `"line"` (bar only) or `"bracket"` (bar + end ticks) |
+| `labelStyle` | `"p"` | `"p"` renders `p = 0.012` / `p < 0.001`; `"asterisks"` renders `*` / `**` / `***` / `ns` |
+| `tickHeight` | `yStep × 0.25` | End tick height in data units (only for `bracketStyle="bracket"`) |
 | `reverse` | `None` | List of `(group1, group2)` tuples identifying brackets to flip below the bar |
 | `categories` | inferred | Ordered list of all x-axis categories |
 | `chartWidth` | `ds.theme()` default | Chart width for computing text x position; auto-read from the active theme, rarely needs to be set explicitly |
-| `decimals` | `3` | Decimal places in the p-value label (only for `label_style="p"`) |
+| `decimals` | `3` | Decimal places in the p-value label (only for `labelStyle="p"`) |
 
 ![p-value example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/pvalue_example_light.png)
 
@@ -335,15 +335,15 @@ Three `style` options are available: `"plusminus"` renders `True` as `+` and `Fa
 | `groups` | required | `{row_label: [bool, ...]}` — one `True`/`False` per category; non-bool values force `style="text"` |
 | `categories` | required | Ordered list of x-axis categories matching the main chart |
 | `style` | `"plusminus"` | `"plusminus"`, `"symbol"`, or `"text"` (auto-set when values are non-bool) |
-| `label_align` | `"left"` | `"left"` places row labels left of the multilabel grid; `"right"` places them right |
-| `label_padding` | `0` | Gap in pixels between the plot boundary and the label text |
+| `labelAlign` | `"left"` | `"left"` places row labels left of the multilabel grid; `"right"` places them right |
+| `labelPadding` | `0` | Gap in pixels between the plot boundary and the label text |
 | `order` | insertion order | Top-to-bottom row order |
-| `row_height` | `14` | Height in pixels per row |
+| `rowHeight` | `14` | Height in pixels per row |
 | `symbol` | `"circle"` | Vega-Lite shape name (`"square"`, `"diamond"`, `"triangle-up"`, etc.) (`"symbol"` style only) |
-| `symbol_size` | `markSize × 4` | Symbol area in square pixels (`"symbol"` style only) |
-| `connecting_line` | `True` | Draw a rule spanning each consecutive run of `True` values per row (`"symbol"` style only) |
+| `symbolSize` | `markSize × 4` | Symbol area in square pixels (`"symbol"` style only) |
+| `connectingLine` | `True` | Draw a rule spanning each consecutive run of `True` values per row (`"symbol"` style only) |
 | `strokeWidth` | `markStrokeWidth` | Stroke width for dots and connecting rule |
-| `y_padding` | `0.1` | Inner padding between rows as a fraction of band step |
+| `yPadding` | `0.1` | Inner padding between rows as a fraction of band step |
 | `chartWidth` | theme default | Width of the annotation chart in pixels |
 | `fontSize` | theme default | Font size for symbols and row labels |
 
@@ -374,12 +374,12 @@ ds.save(chart, "violin")
 | Parameter | Default | Description |
 |---|---|---|
 | `df` | required | Polars or pandas DataFrame |
-| `x_col` | required | Grouping column name |
-| `y_col` | required | Value column name |
+| `xCol` | required | Grouping column name |
+| `yCol` | required | Value column name |
 | `categories` | required | Ordered list of group labels |
 | `palette` | `None` | Single color or list of colors for violin fills |
-| `boxplot_size` | `markSize × 0.8` | Boxplot box width in pixels |
-| `boxplot_color` | `"black"` | Boxplot fill color |
+| `boxplotSize` | `markSize × 0.8` | Boxplot box width in pixels |
+| `boxplotColor` | `"black"` | Boxplot fill color |
 | `fillOpacity` | theme default | Violin fill opacity |
 | `stroke` | `None` | Violin outline color (`None` = no outline) |
 | `strokeWidth` | theme default | Violin outline width |
@@ -400,10 +400,10 @@ chart = ds.mark_strip(df, "group", "value", CATEGORIES, scatter="beeswarm")
 |---|---|---|
 | `scatter` | `"jitter"` | `"jitter"` (fast, random Gaussian) or `"beeswarm"` (collision-avoidance) |
 | `palette` | `None` | List of colors for points |
-| `point_size` | theme `markSize` | Point size in sq px |
+| `pointSize` | theme `markSize` | Point size in sq px |
 | `spread` | `None` | Point spread in pixels. For jitter: std dev (defaults to 2.0). For beeswarm: collision radius (defaults to `√(markSize/π)`) |
 | `errorbars` | `True` | Show mean ± error bars |
-| `errorbar_extent` | `"sem"` | `"sem"` or `"sd"` |
+| `errorbarExtent` | `"sem"` | `"sem"` or `"sd"` |
 
 ---
 
