@@ -73,8 +73,7 @@ def build_pvalue_example():
         )
     )
     right = (
-        right_base
-        + ds.add_pvalue(**pvalue_kwargs, labelStyle="asterisks", bracketStyle="bracket")
+        right_base + ds.add_pvalue(**pvalue_kwargs, labelStyle="asterisks", bracketStyle="bracket")
     ).properties(
         title=alt.TitleParams(
             ['labelStyle="asterisks"', 'bracketStyle="bracket"'], fontSize=fontSize, **title_params
