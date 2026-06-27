@@ -37,6 +37,19 @@ df = pl.DataFrame(
 
 PAIRS = [("A", "B"), ("A", "C"), ("B", "C")]
 
+THIRD_CATEGORIES = ["A", "B"]
+third_df = pl.DataFrame(
+    {
+        "group": ["A"] * 40 + ["B"] * 40,
+        "value": np.concatenate(
+            [
+                rng.normal(1.5, 0.4, 40),
+                rng.normal(2.5, 0.4, 40),
+            ]
+        ),
+    }
+)
+
 
 def build_pvalue_example():
     ds.theme(palette="blues2", chartWidth=75, markSize=13, legend=False)
@@ -80,7 +93,33 @@ def build_pvalue_example():
         )
     )
 
-    chart = alt.hconcat(left, right)
+    third_x = alt.X("group:N", sort=THIRD_CATEGORIES, title=None)
+    third_base = (
+        alt.Chart(third_df)
+        .mark_boxplot(color=ds.palette("blues")[0])
+        .encode(x=third_x, y=alt.Y("value:Q", title=None), color=alt.Color("group:N"))
+    )
+    third = (
+        third_base
+        + ds.add_pvalue(
+            third_df, "group", "value",
+            pairs=[("A", "B")],
+            categories=THIRD_CATEGORIES,
+            bracketStyle="bracket",
+            yStart=float(third_df["value"].min()) - 0.25,
+            yStep=-0.5,
+            tickHeight=0.15,
+            reverse=[("A", "B")],
+        )
+    ).properties(
+        title=alt.TitleParams(
+            ['bracketStyle="bracket"', 'reverse=[("A", "B")]'],
+            fontSize=fontSize,
+            **title_params,
+        )
+    )
+
+    chart = alt.hconcat(left, right, third)
 
     out_png = Path(__file__).parent.parent.parent / "docs" / "pvalue_example_light.png"
     with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
