@@ -350,7 +350,7 @@ Three `style` options are available: `"plusminus"` renders `True` as `+` and `Fa
 | `labelAlign` | `"left"` | `"left"` places row labels left of the multilabel grid; `"right"` places them right |
 | `labelPadding` | `0` | Gap in pixels between the plot boundary and the label text |
 | `order` | insertion order | Top-to-bottom row order |
-| `rowHeight` | `fontSize * 1.5` | Height in pixels per row |
+| `rowHeight` | `10` | Height in pixels per row |
 | `symbol` | `"circle"` | Vega-Lite shape name (`"square"`, `"diamond"`, `"triangle-up"`, etc.) (`"symbol"` style only) |
 | `symbolSize` | `theme(markSize) * 4` | Symbol area in square pixels (`"symbol"` style only) |
 | `connectingLine` | `True` | Draw a connecting rule between consecutive `True` values (`"symbol"` rows only); direction set by `orientation` |
