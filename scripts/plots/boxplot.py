@@ -71,7 +71,11 @@ ann = ds.add_pvalue(
     bracketStyle="line",
 )
 
-chart = points + boxplot + ann
+shade = ds.add_shade(
+    CATEGORIES, "group", palette=ds.palette("blues", n=2, start=0, end=2), repeat=2, opacity=1.0
+)
+
+chart = shade + points + boxplot  # + ann
 
 groups = {
     # "n =": [152, 214, 187, 203, 198, 222],

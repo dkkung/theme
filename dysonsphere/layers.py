@@ -324,6 +324,88 @@ def mark_strip(
     return alt.layer(points, errorbar_layer, median)
 
 
+def add_shade(
+    categories: list[str],
+    xCol: str,
+    *,
+    palette: list[str],
+    repeat: int = 2,
+    opacity: float = 0.5,
+    strokeWidth: float = 0,
+) -> alt.Chart:
+    """
+    Build a background shading layer with one ``mark_rect`` band per x-tick.
+
+    Each rect spans the full chart height. Bands are flush with one another
+    (no inter-band gap). Colors cycle through ``palette``, using each color for
+    ``repeat`` consecutive ticks before advancing to the next.
+
+    The same nominal ``xCol`` field is used as in the main chart so the x scale
+    type is compatible in a layer (no secondary axis). Rect width is set to the
+    band step — since adjacent band centers are always exactly one step apart,
+    this guarantees flush coverage regardless of ``bandPadding``.
+
+    Compose this layer behind a main chart with ``+``::
+
+        shade = ds.add_shade(CATEGORIES, "group", palette=ds.palette("greys", n=2), repeat=2)
+        chart = shade + main_chart
+
+    Parameters
+    ----------
+    categories:
+        Ordered list of x-axis categories — the same list passed to
+        ``mark_strip`` or ``mark_violin``.
+    xCol:
+        Column name for the x-axis grouping variable, matching the field used
+        in the main chart's x encoding.
+    palette:
+        List of hex color strings to cycle through.
+    repeat:
+        Number of consecutive ticks that share the same palette color before
+        advancing to the next color. Defaults to ``2``.
+    opacity:
+        Fill opacity of the shade rects. Defaults to ``0.5``.
+    strokeWidth:
+        Width of the rect border in pixels. Defaults to ``0`` (no stroke).
+        When set, the stroke inherits the theme's ``markStroke`` color and
+        is rendered fully opaque.
+    """
+    n = len(categories)
+    n_colors = len(palette)
+    color_map = [palette[(i // repeat) % n_colors] for i in range(n)]
+    unique_colors = list(dict.fromkeys(color_map))
+
+    band_padding = alt.theme.options.get("bandPadding", 0.1)
+    chart_width = alt.theme.options.get("chartWidth", 100)
+    # Matches Vega-Lite's band scale: step = range / (n - paddingInner + 2*paddingOuter)
+    # with paddingInner = paddingOuter = bandPadding, this simplifies to range / (n + bandPadding).
+    step = chart_width / (n + band_padding)
+
+    shade_df = pl.DataFrame({xCol: categories, "__shade_color": color_map})
+
+    mark_kwargs: dict = {
+        "width": step,
+        "opacity": opacity,
+        "strokeWidth": strokeWidth,
+        "strokeOpacity": 0 if strokeWidth == 0 else 1,
+    }
+    if strokeWidth > 0:
+        mark_kwargs["stroke"] = alt.theme.options.get("markStroke", "black")
+
+    return (
+        alt.Chart(shade_df)
+        .mark_rect(**mark_kwargs)
+        .encode(
+            x=alt.X(f"{xCol}:N", sort=categories, axis=None),
+            fill=alt.Fill(
+                "__shade_color:N",
+                scale=alt.Scale(domain=unique_colors, range=unique_colors),
+                legend=None,
+            ),
+        )
+    )
+
+
 def add_multilabel_detached(
     groups: dict[str, list],
     categories: list[str],
