@@ -214,7 +214,9 @@ def add_jitter(
     df:
         Input DataFrame.
     spread:
-        Standard deviation of the jitter in pixels. Defaults to 5.0.
+        Standard deviation of the jitter in pixels. Defaults to
+        ``min(chartWidth, chartHeight) / 50`` from the active theme (2.0 at
+        the default 100×100 chart size).
     outCol:
         Name of the output offset column added to the DataFrame.
     seed:
@@ -239,6 +241,8 @@ def add_jitter(
     """
     df = ensure_polars(df)
     if spread is None:
-        spread = 2.0
+        w = alt.theme.options.get("chartWidth", 100)
+        h = alt.theme.options.get("chartHeight", 100)
+        spread = min(w, h) / 50
     rng = np.random.default_rng(seed)
     return df.with_columns(pl.Series(outCol, rng.normal(0, spread, len(df))))

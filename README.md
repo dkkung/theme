@@ -230,7 +230,7 @@ alt.Chart(df).mark_circle().encode(
 
 | Parameter | Default | Description |
 |---|---|---|
-| `spread` | `2.0` | Standard deviation of jitter in pixels. Pass `None` to use `2.0` |
+| `spread` | `min(chartWidth, chartHeight) / 50` | Standard deviation of jitter in pixels. Auto-scaled from theme dimensions (2.0 at default 100×100) |
 | `outCol` | `"jitter_x"` | Output column name |
 | `seed` | `20220701` | Random seed |
 
@@ -414,7 +414,7 @@ chart = ds.mark_strip(df, "group", "value", CATEGORIES, scatter="beeswarm")
 | `scatter` | `"jitter"` | `"jitter"` (fast, random Gaussian) or `"beeswarm"` (collision-avoidance) |
 | `palette` | `None` | List of colors for points |
 | `pointSize` | `theme(markSize)` | Point size in sq px |
-| `spread` | `None` | Point spread in pixels. For jitter: std dev (defaults to 2.0). For beeswarm: collision radius (defaults to `√(markSize/π)` from theme) |
+| `spread` | `None` | Point spread in pixels. For jitter: std dev (defaults to `min(chartWidth, chartHeight) / 50`). For beeswarm: collision radius (defaults to `√(markSize/π)` from theme) |
 | `errorbars` | `True` | Show mean ± error bars |
 | `errorbarExtent` | `"sem"` | `"sem"` or `"sd"` |
 
