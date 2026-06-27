@@ -465,9 +465,9 @@ def add_multilabel_detached(
         chart = ds.mark_strip(df, "group", "value", CATEGORIES)
         ann = ds.add_multilabel_detached(
             {
-                "dTAG^V-1":         [False, True,  True,  True],
-                "ZFC3H1 WT":        [False, False, True,  False],
-                "ZFC3H1(Δ730–747)": [False, False, False, True],
+                "Group A":         [False, True,  True,  True],
+                "Group B":        [False, False, True,  False],
+                "Group C": [False, False, False, True],
             },
             categories=CATEGORIES,
             style="symbol",
@@ -507,7 +507,9 @@ def add_multilabel_detached(
     def _row_style(label: str) -> str:
         s = (rowStyles or {}).get(label, style)
         if s not in ("plusminus", "text", "symbol"):
-            raise ValueError(f"rowStyles[{label!r}] must be 'plusminus', 'text', or 'symbol', got {s!r}")
+            raise ValueError(
+                f"rowStyles[{label!r}] must be 'plusminus', 'text', or 'symbol', got {s!r}"
+            )
         if any(not isinstance(v, bool) for v in groups[label]):
             return "text"
         return s
@@ -613,9 +615,7 @@ def add_multilabel_detached(
         if strokeWidth is None:
             strokeWidth = alt.theme.options.get("markStrokeWidth", 0.25)
 
-        plus_df = marks_df.filter(
-            pl.col("__label").is_in(symbol_rows) & (pl.col("__value") == "+")
-        )
+        plus_df = marks_df.filter(pl.col("__label").is_in(symbol_rows) & (pl.col("__value") == "+"))
         minus_df = marks_df.filter(
             pl.col("__label").is_in(symbol_rows) & (pl.col("__value") == "-")
         )
@@ -663,12 +663,20 @@ def add_multilabel_detached(
                     else:
                         if len(run) >= 2:
                             line_rows.append(
-                                {"__label": label, "__x_start": categories[run[0]], "__x_end": categories[run[-1]]}
+                                {
+                                    "__label": label,
+                                    "__x_start": categories[run[0]],
+                                    "__x_end": categories[run[-1]],
+                                }
                             )
                         run = []
                 if len(run) >= 2:
                     line_rows.append(
-                        {"__label": label, "__x_start": categories[run[0]], "__x_end": categories[run[-1]]}
+                        {
+                            "__label": label,
+                            "__x_start": categories[run[0]],
+                            "__x_end": categories[run[-1]],
+                        }
                     )
         else:  # vertical
             for i, cat in enumerate(categories):
@@ -681,12 +689,20 @@ def add_multilabel_detached(
                     else:
                         if len(run) >= 2:
                             line_rows.append(
-                                {"__category": cat, "__label": row_order[run[0]], "__label_end": row_order[run[-1]]}
+                                {
+                                    "__category": cat,
+                                    "__label": row_order[run[0]],
+                                    "__label_end": row_order[run[-1]],
+                                }
                             )
                         run = []
                 if len(run) >= 2:
                     line_rows.append(
-                        {"__category": cat, "__label": row_order[run[0]], "__label_end": row_order[run[-1]]}
+                        {
+                            "__category": cat,
+                            "__label": row_order[run[0]],
+                            "__label_end": row_order[run[-1]],
+                        }
                     )
 
         if connectingLine and line_rows:
@@ -755,7 +771,7 @@ def add_multilabel(
         chart = ds.mark_strip(df, "group", "value", CATEGORIES)
         composed = ds.add_multilabel(
             chart,
-            {"dTAG^V-1": [False, True, True, True], "ZFC3H1 WT": [False, False, True, False]},
+            {"Group A": [False, True, True, True], "Group B": [False, False, True, False]},
             categories=CATEGORIES,
             style="symbol",
             labelAlign="right",
