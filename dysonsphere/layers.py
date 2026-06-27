@@ -330,7 +330,7 @@ def add_shade(
     *,
     palette: list[str],
     repeat: int = 2,
-    opacity: float = 0.5,
+    opacity: float = 1.0,
     strokeWidth: float = 0,
     flush: bool | None = None,
 ) -> alt.LayerChart:
@@ -366,7 +366,7 @@ def add_shade(
         Number of consecutive ticks that share the same palette color before
         advancing to the next color. Defaults to ``2``.
     opacity:
-        Fill opacity of the shade rects. Defaults to ``0.5``.
+        Fill opacity of the shade rects. Defaults to ``1.0``.
     strokeWidth:
         Width of the rect border in pixels. Defaults to ``0`` (no stroke).
         When set, the stroke inherits the theme's ``markStroke`` color and
