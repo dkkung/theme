@@ -230,7 +230,7 @@ alt.Chart(df).mark_circle().encode(
 
 | Parameter | Default | Description |
 |---|---|---|
-| `spread` | `min(chartWidth, chartHeight) / 50` | Standard deviation of jitter in pixels. Auto-scaled from theme dimensions (2.0 at default 100×100) |
+| `spread` | `min(chartWidth, chartHeight) / 50` | Standard deviation of jitter in pixels. Auto-scaled from theme dimensions (2.0 at default 100×100 px<sup>2</sup>) |
 | `outCol` | `"jitter_x"` | Output column name |
 | `seed` | `20220701` | Random seed |
 
