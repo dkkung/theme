@@ -333,7 +333,8 @@ def add_shade(
     palette: list[str] | None = None,
     repeat: int = 1,
     opacity: float = 1.0,
-    strokeWidth: float = 0,
+    stroke: bool = False,
+    strokeWidth: float | None = None,
     strokeDash: list[float] | bool | None = None,
     flush: bool | None = None,
 ) -> alt.LayerChart:
@@ -416,9 +417,13 @@ def add_shade(
         advancing (band mode only). Defaults to ``1``.
     opacity:
         Fill opacity of the shade rects. Defaults to ``1.0``.
+    stroke:
+        Enable a border on the shade rects. ``False`` (default) → no stroke.
+        ``True`` → axis-style stroke: color from theme darkmode state
+        (black / white), width from ``axisWidth``.
     strokeWidth:
-        Width of the rect border in pixels. Defaults to ``0`` (no stroke).
-        When set, the stroke inherits the theme's ``markStroke`` color.
+        Explicit border width in pixels. Overrides ``axisWidth`` when
+        ``stroke=True``. Has no effect when ``stroke=False``.
     strokeDash:
         Dash pattern for the rect border. ``None`` (default) → solid.
         ``True`` → inherit ``dashedWidth`` from the active theme.
@@ -436,13 +441,17 @@ def add_shade(
     resolved_dash = (
         alt.theme.options.get("dashedWidth", [2, 2]) if strokeDash is True else strokeDash
     )
+    resolved_stroke_width = (
+        strokeWidth if strokeWidth is not None
+        else alt.theme.options.get("axisWidth", 0.25)
+    ) if stroke else 0
+    axis_stroke_color = "white" if alt.theme.options.get("darkmode", False) else "black"
     mark_kwargs: dict = {
         "opacity": opacity,
-        "strokeWidth": strokeWidth,
-        "strokeOpacity": 0 if strokeWidth == 0 else 1,
+        "stroke": axis_stroke_color if stroke else None,
+        "strokeWidth": resolved_stroke_width,
+        "strokeOpacity": 1 if stroke else 0,
     }
-    if strokeWidth > 0:
-        mark_kwargs["stroke"] = alt.theme.options.get("markStroke", "black")
     if resolved_dash is not None:
         mark_kwargs["strokeDash"] = resolved_dash
 
