@@ -73,7 +73,6 @@ right = (
         label="Intervention",
         labelPosition="right",
         labelAlign="bottom",
-        strokeDash=False,
     )
 ).properties(title="add_rule(axis='x')")
 
