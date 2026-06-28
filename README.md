@@ -581,7 +581,8 @@ chart = base + ds.add_rule(10, axis="x", label="t₀", labelPosition="left")
 | `label` | `None` | Text label(s); one string per value |
 | `labelAlign` | `"left"` / `"top"` | Where along the line to anchor the label. `axis="y"`: `"left"`, `"center"`, or `"right"`. `axis="x"`: `"top"`, `"center"`, or `"bottom"` |
 | `labelPosition` | `"top"` / `"right"` | Which side of the line the label sits on. `axis="y"`: `"top"` or `"bottom"`. `axis="x"`: `"right"` or `"left"` |
-| `labelOffset` | `4` | Pixel gap between label and line (perpendicular). Negate to flip to the opposite side |
+| `labelOffsetX` | `0` | Additional horizontal pixel offset on the label. Positive = right, negative = left |
+| `labelOffsetY` | `0` | Additional vertical pixel offset on the label. Positive = down, negative = up |
 | `color` | `None` | Line and label color; `None` inherits from theme |
 | `strokeWidth` | `None` | Line width in pixels; `None` inherits from theme |
 | `strokeDash` | `None` | `None` = theme `dashedRule`; `False` = solid; `True` = `dashedWidth`; list = explicit pattern |

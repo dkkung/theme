@@ -35,7 +35,8 @@ def add_rule(
     label: str | list[str] | None = None,
     labelPosition: str | None = None,
     labelAlign: str | None = None,
-    labelOffset: int = 4,
+    labelOffsetX: int = 0,
+    labelOffsetY: int = 0,
     color: str | None = None,
     strokeWidth: float | None = None,
     strokeDash: bool | list[int] | None = None,
@@ -64,9 +65,12 @@ def add_rule(
         Which *side* of the line the label sits on.
         ``axis="y"``: ``"top"`` (default) or ``"bottom"``.
         ``axis="x"``: ``"right"`` (default) or ``"left"``.
-    labelOffset:
-        Pixel gap between the label and the line (always positive). Default
-        ``4``. Negate to flip the label to the other side.
+    labelOffsetX:
+        Additional horizontal pixel offset applied to the label. Default ``0``.
+        Positive shifts right, negative shifts left.
+    labelOffsetY:
+        Additional vertical pixel offset applied to the label. Default ``0``.
+        Positive shifts down, negative shifts up.
     color:
         Line and label color. ``None`` inherits from the active theme.
     strokeWidth:
@@ -88,10 +92,10 @@ def add_rule(
         # Horizontal line at y=0
         chart = base + ds.add_rule(0)
 
-        # Labeled horizontal line, label above and to the left (defaults)
+        # Labeled horizontal line, label above-left by default
         chart = base + ds.add_rule(5.0, label="Threshold", color="#c0392b")
 
-        # Two horizontal lines, labels anchored to the right end
+        # Two horizontal lines, labels at the right end
         chart = base + ds.add_rule(
             [4.0, 8.0],
             label=["Lower limit", "Upper limit"],
@@ -99,11 +103,13 @@ def add_rule(
             color="#c0392b",
         )
 
-        # Vertical line, label at top-right (defaults)
+        # Vertical line, label at top-right by default
         chart = base + ds.add_rule(10, axis="x", label="Intervention", color="#c0392b")
 
-        # Vertical line, label to the left of the line
-        chart = base + ds.add_rule(10, axis="x", label="t₀", labelPosition="left")
+        # Vertical line, label nudged right and down
+        chart = base + ds.add_rule(
+            10, axis="x", label="t₀", labelOffsetX=4, labelOffsetY=4
+        )
     """
     if axis not in ("x", "y"):
         raise ValueError(f"axis must be 'x' or 'y', got {axis!r}")
@@ -114,8 +120,8 @@ def add_rule(
 
     if axis == "y":
         # Horizontal rule: value is a y-coordinate.
-        # labelAlign controls where along the line (x-axis): "left", "center", "right".
-        # labelPosition controls which side of the line (y-axis): "top", "bottom".
+        # labelAlign: where along the line (x-axis): "left", "center", "right".
+        # labelPosition: which side of the line (y-axis): "top", "bottom".
         df = pl.DataFrame({"__v": [float(v) for v in vals]})
         rule = alt.Chart(df).mark_rule(**mark_kwargs).encode(y=alt.Y("__v:Q", title=None))
         if label is None:
@@ -135,21 +141,15 @@ def add_rule(
             raise ValueError(f"labelPosition must be 'top' or 'bottom' for axis='y', got {lp!r}")
 
         chart_width = alt.theme.options.get("chartWidth", 100)
-        # x anchor and inset from chart edge
-        x_anchor, edge_dx = {
-            "left": (0, 4),
-            "center": (chart_width / 2, 0),
-            "right": (chart_width, -4),
-        }[la]
-        # dy: above or below the line; baseline keeps text clear of the line
-        dy = -labelOffset if lp == "top" else labelOffset
+        x_anchor = {"left": 0, "center": chart_width / 2, "right": chart_width}[la]
+        base_dy = -3 if lp == "top" else 3
         vl_baseline = "bottom" if lp == "top" else "top"
 
         ldf = pl.DataFrame({"__v": [float(v) for v in vals], "__label": labels})
         text_kwargs: dict = {
-            "align": la,  # "left"/"center"/"right" maps directly to Vega-Lite align
-            "dx": edge_dx,
-            "dy": dy,
+            "align": la,
+            "dx": labelOffsetX,
+            "dy": base_dy + labelOffsetY,
             "baseline": vl_baseline,
             "fontSize": fs,
         }
@@ -168,8 +168,8 @@ def add_rule(
 
     else:  # axis == "x"
         # Vertical rule: value is an x-coordinate.
-        # labelAlign controls where along the line (y-axis): "top", "center", "bottom".
-        # labelPosition controls which side of the line (x-axis): "right", "left".
+        # labelAlign: where along the line (y-axis): "top", "center", "bottom".
+        # labelPosition: which side of the line (x-axis): "right", "left".
         df = pl.DataFrame({"__v": [float(v) for v in vals]})
         rule = alt.Chart(df).mark_rule(**mark_kwargs).encode(x=alt.X("__v:Q", title=None))
         if label is None:
@@ -189,21 +189,19 @@ def add_rule(
             raise ValueError(f"labelPosition must be 'left' or 'right' for axis='x', got {lp!r}")
 
         chart_height = alt.theme.options.get("chartHeight", 100)
-        # y anchor, inset from chart edge, and Vega-Lite baseline
-        y_anchor, edge_dy, vl_baseline = {
-            "top": (0, 4, "top"),
-            "center": (chart_height / 2, 0, "middle"),
-            "bottom": (chart_height, -4, "bottom"),
+        y_anchor, vl_baseline = {
+            "top": (0, "top"),
+            "center": (chart_height / 2, "middle"),
+            "bottom": (chart_height, "bottom"),
         }[la]
-        # dx: right or left of the line; Vega-Lite align keeps text clear of the line
-        dx = labelOffset if lp == "right" else -labelOffset
+        base_dx = 3 if lp == "right" else -3
         vl_align = "left" if lp == "right" else "right"
 
         ldf = pl.DataFrame({"__v": [float(v) for v in vals], "__label": labels})
         text_kwargs = {
             "align": vl_align,
-            "dx": dx,
-            "dy": edge_dy,
+            "dx": base_dx + labelOffsetX,
+            "dy": labelOffsetY,
             "baseline": vl_baseline,
             "fontSize": fs,
         }

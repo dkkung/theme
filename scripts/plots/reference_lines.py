@@ -67,7 +67,14 @@ lines = (
 )
 right = (
     lines
-    + ds.add_rule(10, axis="x", label="Intervention", labelPosition="right", labelAlign="bottom")
+    + ds.add_rule(
+        10,
+        axis="x",
+        label="Intervention",
+        labelPosition="right",
+        labelAlign="bottom",
+        strokeDash=False,
+    )
 ).properties(title="add_rule(axis='x')")
 
 chart = alt.hconcat(left, right)
