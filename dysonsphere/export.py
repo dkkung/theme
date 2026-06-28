@@ -306,7 +306,7 @@ def _fix_log_minor_ticks(path: str) -> None:
             return
         # Detect uniform vs non-uniform from first interval.
         lo1, hi1 = major_positions[0], major_positions[1]
-        interval1 = sorted(p for _, p in minor_els if lo1 - 1.0 <= p <= hi1 + 1.0)
+        interval1 = sorted(p for _, p in minor_els if lo1 - 1.0 <= p <= hi1)
         if not interval1:
             return
         n_minor = len(interval1)
@@ -322,7 +322,7 @@ def _fix_log_minor_ticks(path: str) -> None:
             for i in range(n):
                 lo = major_positions[i]
                 hi = major_positions[i + 1]
-                if lo - 1.0 <= pos_int <= hi + 1.0:
+                if lo - 1.0 <= pos_int <= hi:
                     span = hi - lo
                     if span == 0:
                         break
