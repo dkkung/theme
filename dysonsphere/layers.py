@@ -11,7 +11,7 @@ def add_shade(
     xCol: str | None = None,
     *,
     positions: list[tuple] | None = None,
-    axis: str = 'x',
+    axis: str = "x",
     palette: list[str] | None = None,
     nShades: int = 2,
     repeat: int = 1,
@@ -125,6 +125,7 @@ def add_shade(
         ``closed`` setting.
     """
     from .palettes import colors as _colors
+
     darkmode = alt.theme.options.get("darkmode", False)
     if darkmode:
         palette = _colors["greys"][-nShades:]
@@ -138,9 +139,10 @@ def add_shade(
         alt.theme.options.get("dashedWidth", [2, 2]) if strokeDash is True else strokeDash
     )
     resolved_stroke_width = (
-        strokeWidth if strokeWidth is not None
-        else alt.theme.options.get("axisWidth", 0.25)
-    ) if stroke else 0
+        (strokeWidth if strokeWidth is not None else alt.theme.options.get("axisWidth", 0.25))
+        if stroke
+        else 0
+    )
     axis_stroke_color = "white" if alt.theme.options.get("darkmode", False) else "black"
     mark_kwargs: dict = {
         "opacity": opacity,
@@ -157,7 +159,7 @@ def add_shade(
     if positions is not None:
         layers: list[alt.Chart] = []
 
-        if axis == 'both':
+        if axis == "both":
             # Nested tuples: ((x_start, x_end), (y_start, y_end)).
             # Each half is resolved independently — string → pixel value via
             # band scale; numeric → Q field that shares the main chart's scale.
@@ -186,8 +188,7 @@ def add_shade(
                     si, ei = cat_index[x_start], cat_index[x_end]
                     lo = 0 if (flush and si == 0) else x_step * (band_padding + si)
                     hi = (
-                        chart_width if (flush and ei == n - 1)
-                        else x_step * (band_padding + ei + 1)
+                        chart_width if (flush and ei == n - 1) else x_step * (band_padding + ei + 1)
                     )
                     enc["x"] = alt.value(lo)
                     enc["x2"] = alt.value(hi)
@@ -205,7 +206,8 @@ def add_shade(
                     si, ei = cat_index[y_start], cat_index[y_end]
                     lo = 0 if (flush and si == 0) else y_step * (band_padding + si)
                     hi = (
-                        chart_height if (flush and ei == n - 1)
+                        chart_height
+                        if (flush and ei == n - 1)
                         else y_step * (band_padding + ei + 1)
                     )
                     enc["y"] = alt.value(lo)
@@ -217,23 +219,19 @@ def add_shade(
                     enc["y2"] = alt.Y2("__y_end:Q")
 
                 df = pl.DataFrame(data_fields) if data_fields else dummy_df
-                layers.append(
-                    alt.Chart(df).mark_rect(**mark_kwargs, color=color).encode(**enc)
-                )
+                layers.append(alt.Chart(df).mark_rect(**mark_kwargs, color=color).encode(**enc))
 
         elif len(positions) > 0 and isinstance(positions[0][0], str):
             # String tuples: category names on a nominal axis.
             # Convert to pixel coordinates using the band scale formula so the
             # shade layer does not participate in scale merging.
             if categories is None:
-                raise ValueError(
-                    "categories is required when positions contains string tuples."
-                )
+                raise ValueError("categories is required when positions contains string tuples.")
             band_padding = alt.theme.options.get("bandPadding", 0.1)
             n = len(categories)
             span = (
                 alt.theme.options.get("chartHeight", 100)
-                if axis == 'y'
+                if axis == "y"
                 else alt.theme.options.get("chartWidth", 100)
             )
             step = span / (n + 2 * band_padding)
@@ -249,7 +247,7 @@ def add_shade(
                 color = palette[k % n_colors]
                 enc = (
                     {"y": alt.value(lo), "y2": alt.value(hi)}
-                    if axis == 'y'
+                    if axis == "y"
                     else {"x": alt.value(lo), "x2": alt.value(hi)}
                 )
                 layers.append(
@@ -262,7 +260,7 @@ def add_shade(
             for k, (start, end) in enumerate(positions):
                 color = palette[k % n_colors]
                 pos_df = pl.DataFrame({"__start": [float(start)], "__end": [float(end)]})
-                if axis == 'y':
+                if axis == "y":
                     chart = (
                         alt.Chart(pos_df)
                         .mark_rect(**mark_kwargs, color=color)
@@ -548,9 +546,8 @@ def _multilabel_layer(
             )
         max_len = max(len(cat) for cat in categories)
         angle_rad = abs(math.radians(categoryLabelAngle))
-        tight_height = (
-            fontSize * 0.6 * max_len * math.sin(angle_rad)
-            + fontSize * math.cos(angle_rad)
+        tight_height = fontSize * 0.6 * max_len * math.sin(angle_rad) + fontSize * math.cos(
+            angle_rad
         )
         if categoryLabelHeight is None:
             categoryLabelHeight = math.ceil(tight_height)
@@ -739,13 +736,21 @@ def _multilabel_layer(
                     else:
                         if len(run) >= 2:
                             _id = f"{cat}_{run[0]}_{run[-1]}"
-                            line_rows.append({"__category": cat, "__label": row_order[run[0]], "__line_id": _id})
-                            line_rows.append({"__category": cat, "__label": row_order[run[-1]], "__line_id": _id})
+                            line_rows.append(
+                                {"__category": cat, "__label": row_order[run[0]], "__line_id": _id}
+                            )
+                            line_rows.append(
+                                {"__category": cat, "__label": row_order[run[-1]], "__line_id": _id}
+                            )
                         run = []
                 if len(run) >= 2:
                     _id = f"{cat}_{run[0]}_{run[-1]}"
-                    line_rows.append({"__category": cat, "__label": row_order[run[0]], "__line_id": _id})
-                    line_rows.append({"__category": cat, "__label": row_order[run[-1]], "__line_id": _id})
+                    line_rows.append(
+                        {"__category": cat, "__label": row_order[run[0]], "__line_id": _id}
+                    )
+                    line_rows.append(
+                        {"__category": cat, "__label": row_order[run[-1]], "__line_id": _id}
+                    )
 
         if connectingLine and line_rows:
             lines_df = pl.DataFrame(line_rows)
