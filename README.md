@@ -498,6 +498,32 @@ shade = ds.add_shade(
 
 ![Nonlinear scale example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/nonlinear_example_light.png)
 
+### `log_label_expr()`
+
+`log_label_expr(base=10)` returns a Vega `labelExpr` string that formats log-scale axis labels as `b^n` using Unicode superscripts (e.g. `10⁴`, `2⁻³`, `2²⁰`). Pass it to `alt.Axis(labelExpr=...)`.
+
+```python
+# base-10 y-axis: labels render as 10⁴, 10⁵, 10⁶, …
+axis=alt.Axis(
+    values=[10**e for e in range(exp_min, exp_max + 1)],
+    labelExpr=ds.log_label_expr(),
+)
+
+# log2 x-axis: labels render as 2⁰, 2¹, …, 2²⁰
+axis=alt.Axis(
+    values=[2**e for e in range(0, 21)],
+    labelExpr=ds.log_label_expr(base=2),
+)
+```
+
+Supports exponents up to ±99, covering all practical scientific and computing ranges for bases 2 and 10.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `base` | `10` | Logarithm base matching the axis scale |
+
+---
+
 ### `add_log_ticks()`
 
 **Base 10** places ticks at the conventional 2×–9× integer multiples within each decade (8 minor ticks per decade, fixed). **Base 2** places `nMinor` equally-spaced ticks per octave in log space — default `nMinor=1` gives one tick at the geometric midpoint (√2 × 2ⁿ). Other integer bases also work using the same equal-spacing rule.

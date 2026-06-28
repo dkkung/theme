@@ -38,7 +38,7 @@ chart = (
             "value:Q",
             title="Cumulative cell number",
             scale=alt.Scale(type="log", base=10),
-            axis=alt.Axis(values=major_values),
+            axis=alt.Axis(values=major_values, labelExpr=ds.log_label_expr()),
         ),
         color=alt.Color("group:N", sort=GROUPS, title=None),
     )

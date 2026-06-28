@@ -5,6 +5,58 @@ import altair as alt
 from .utils import ensure_polars
 
 # ---------------------------------------------------------------------------
+# Log-scale axis label helper
+# ---------------------------------------------------------------------------
+
+_SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+
+
+def log_label_expr(base: int = 10) -> str:
+    """Return a Vega ``labelExpr`` string for base-N log-scale axis labels.
+
+    Formats tick labels as ``b^n`` using Unicode superscripts, e.g. ``10⁴``,
+    ``2⁻³``, ``2²⁰``. Supports exponents up to ±99, covering all practical
+    scientific and computing ranges for bases 2 and 10.
+
+    Pass the return value directly to ``alt.Axis(labelExpr=...)``.
+
+    Parameters
+    ----------
+    base:
+        Logarithm base. Defaults to ``10``.
+
+    Examples
+    --------
+    ::
+
+        # base-10 y-axis: labels as 10⁴, 10⁵, 10⁶, …
+        axis=alt.Axis(
+            values=[10**e for e in range(4, 8)],
+            labelExpr=ds.log_label_expr(),
+        )
+
+        # log2 x-axis: labels as 2⁰, 2¹, …, 2²⁰
+        axis=alt.Axis(
+            values=[2**e for e in range(0, 21)],
+            labelExpr=ds.log_label_expr(base=2),
+        )
+    """
+    b = str(base)
+    # Vega expression: exp = exponent (may be negative, may be two digits).
+    # abs_exp used twice in each branch; must be written out each time since
+    # Vega's restricted expression language does not support variable binding.
+    e = f"round(log(datum.value) / log({base}))"
+    ae = f"abs(round(log(datum.value) / log({base})))"
+    sup = f"'{_SUP}'"
+    two = f"({ae} >= 10 ? {sup}[floor({ae}/10)] + {sup}[{ae}%10] : {sup}[{ae}])"
+    return (
+        f"{e} < 0"
+        f" ? '{b}⁻' + {two}"
+        f" : '{b}' + {two}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Log-scale minor ticks
 # ---------------------------------------------------------------------------
 

@@ -63,7 +63,7 @@ def build_nonlinear_example():
                 scale=alt.Scale(type="log", base=10),
                 axis=alt.Axis(
                     values=major_log,
-                    labelExpr="'10' + slice('⁰¹²³⁴⁵⁶⁷⁸⁹', round(log(datum.value) / log(10)), round(log(datum.value) / log(10)) + 1)",
+                    labelExpr=ds.log_label_expr(),
                 ),
             ),
             color=alt.Color(
