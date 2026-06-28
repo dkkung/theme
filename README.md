@@ -544,6 +544,52 @@ shade = ds.add_shade(
 
 ---
 
+## Reference lines
+
+`add_rule()` builds a horizontal or vertical `mark_rule` layer. Compose it with the main chart using `+`.
+
+```python
+# Horizontal line at y=0
+chart = base + ds.add_rule(0)
+
+# Labeled horizontal line — label above-left by default
+chart = base + ds.add_rule(5.0, label="Threshold", color="#c0392b")
+
+# Two horizontal lines, labels at the right end of each line
+chart = base + ds.add_rule(
+    [4.0, 8.0],
+    label=["Lower limit", "Upper limit"],
+    labelAlign="right",
+    color="#c0392b",
+)
+
+# Vertical line, label at top-right by default
+chart = base + ds.add_rule(10, axis="x", label="Intervention", color="#c0392b")
+
+# Vertical line, label to the left of the line
+chart = base + ds.add_rule(10, axis="x", label="t₀", labelPosition="left")
+```
+
+`labelAlign` controls where **along** the line the label is anchored; `labelPosition` controls which **side** of the line it sits on.
+
+![reference line example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/reference_line_example_light.png)
+
+| Parameter | Default | Description |
+|---|---|---|
+| `value` | required | Coordinate(s) on the axis; `float` or `list[float]` |
+| `axis` | `"y"` | `"y"` = horizontal line(s); `"x"` = vertical line(s) |
+| `label` | `None` | Text label(s); one string per value |
+| `labelAlign` | `"left"` / `"top"` | Where along the line to anchor the label. `axis="y"`: `"left"`, `"center"`, or `"right"`. `axis="x"`: `"top"`, `"center"`, or `"bottom"` |
+| `labelPosition` | `"top"` / `"right"` | Which side of the line the label sits on. `axis="y"`: `"top"` or `"bottom"`. `axis="x"`: `"right"` or `"left"` |
+| `labelOffset` | `4` | Pixel gap between label and line (perpendicular). Negate to flip to the opposite side |
+| `color` | `None` | Line and label color; `None` inherits from theme |
+| `strokeWidth` | `None` | Line width in pixels; `None` inherits from theme |
+| `strokeDash` | `None` | `None` = theme `dashedRule`; `False` = solid; `True` = `dashedWidth`; list = explicit pattern |
+| `opacity` | `1.0` | Line opacity |
+| `fontSize` | `None` | Label font size; `None` inherits from theme |
+
+---
+
 ## Non-linear axes
 
 `add_log_ticks()` and `add_pow_ticks()` add unlabeled minor ticks to log- and power-scaled axes respectively. Both wrap your chart in a layer with an invisible second axis — your chart's data, scale domain, and axis labels are unaffected. Both work with `alt.Chart`, `alt.LayerChart`, and any chart type composable with `alt.layer()`, including `hconcat` and `vconcat` layouts.

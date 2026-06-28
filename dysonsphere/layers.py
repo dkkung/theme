@@ -5,6 +5,224 @@ import polars as pl
 
 from .utils import count_n
 
+# Reference lines
+
+
+def _rule_mark_kwargs(
+    color: str | None,
+    strokeWidth: float | None,
+    strokeDash: bool | list[int] | None,
+    opacity: float,
+) -> dict:
+    kwargs: dict = {"opacity": opacity}
+    if color is not None:
+        kwargs["color"] = color
+    if strokeWidth is not None:
+        kwargs["strokeWidth"] = strokeWidth
+    if strokeDash is False:
+        kwargs["strokeDash"] = [0, 0]
+    elif strokeDash is True:
+        kwargs["strokeDash"] = alt.theme.options.get("dashedWidth", [2, 2])
+    elif isinstance(strokeDash, list):
+        kwargs["strokeDash"] = strokeDash
+    return kwargs
+
+
+def add_rule(
+    value: float | list[float],
+    *,
+    axis: str = "y",
+    label: str | list[str] | None = None,
+    labelPosition: str | None = None,
+    labelAlign: str | None = None,
+    labelOffset: int = 4,
+    color: str | None = None,
+    strokeWidth: float | None = None,
+    strokeDash: bool | list[int] | None = None,
+    opacity: float = 1.0,
+    fontSize: float | None = None,
+) -> alt.Chart | alt.LayerChart:
+    """
+    Add one or more horizontal or vertical reference lines to a chart.
+
+    Returns a layer that the caller composes with ``+``.
+
+    Parameters
+    ----------
+    value:
+        Coordinate(s) on the specified axis. ``float`` or ``list[float]``.
+    axis:
+        ``"y"`` (default) — horizontal line(s) at fixed y value(s).
+        ``"x"`` — vertical line(s) at fixed x value(s).
+    label:
+        Optional text label(s). One string per value.
+    labelAlign:
+        Where *along* the line the label is anchored.
+        ``axis="y"``: ``"left"`` (default), ``"center"``, or ``"right"``.
+        ``axis="x"``: ``"top"`` (default), ``"center"``, or ``"bottom"``.
+    labelPosition:
+        Which *side* of the line the label sits on.
+        ``axis="y"``: ``"top"`` (default) or ``"bottom"``.
+        ``axis="x"``: ``"right"`` (default) or ``"left"``.
+    labelOffset:
+        Pixel gap between the label and the line (always positive). Default
+        ``4``. Negate to flip the label to the other side.
+    color:
+        Line and label color. ``None`` inherits from the active theme.
+    strokeWidth:
+        Line width in pixels. ``None`` inherits from the active theme.
+    strokeDash:
+        ``None`` (default) inherits the theme's ``dashedRule`` setting.
+        ``False`` forces a solid line. ``True`` uses the theme's
+        ``dashedWidth`` pattern. A list (e.g. ``[4, 2]``) uses that
+        pattern directly.
+    opacity:
+        Line opacity. Defaults to ``1.0``.
+    fontSize:
+        Label font size. ``None`` inherits from the active theme.
+
+    Examples
+    --------
+    ::
+
+        # Horizontal line at y=0
+        chart = base + ds.add_rule(0)
+
+        # Labeled horizontal line, label above and to the left (defaults)
+        chart = base + ds.add_rule(5.0, label="Threshold", color="#c0392b")
+
+        # Two horizontal lines, labels anchored to the right end
+        chart = base + ds.add_rule(
+            [4.0, 8.0],
+            label=["Lower limit", "Upper limit"],
+            labelAlign="right",
+            color="#c0392b",
+        )
+
+        # Vertical line, label at top-right (defaults)
+        chart = base + ds.add_rule(10, axis="x", label="Intervention", color="#c0392b")
+
+        # Vertical line, label to the left of the line
+        chart = base + ds.add_rule(10, axis="x", label="t₀", labelPosition="left")
+    """
+    if axis not in ("x", "y"):
+        raise ValueError(f"axis must be 'x' or 'y', got {axis!r}")
+
+    vals = value if isinstance(value, list) else [value]
+    mark_kwargs = _rule_mark_kwargs(color, strokeWidth, strokeDash, opacity)
+    fs = fontSize if fontSize is not None else alt.theme.options.get("fontSize", 7)
+
+    if axis == "y":
+        # Horizontal rule: value is a y-coordinate.
+        # labelAlign controls where along the line (x-axis): "left", "center", "right".
+        # labelPosition controls which side of the line (y-axis): "top", "bottom".
+        df = pl.DataFrame({"__v": [float(v) for v in vals]})
+        rule = alt.Chart(df).mark_rule(**mark_kwargs).encode(y=alt.Y("__v:Q", title=None))
+        if label is None:
+            return rule
+
+        labels = [label] if isinstance(label, str) else list(label)
+        if len(labels) != len(vals):
+            raise ValueError(f"label has {len(labels)} items but value has {len(vals)}")
+
+        la = labelAlign if labelAlign is not None else "left"
+        lp = labelPosition if labelPosition is not None else "top"
+        if la not in ("left", "center", "right"):
+            raise ValueError(
+                f"labelAlign must be 'left', 'center', or 'right' for axis='y', got {la!r}"
+            )
+        if lp not in ("top", "bottom"):
+            raise ValueError(f"labelPosition must be 'top' or 'bottom' for axis='y', got {lp!r}")
+
+        chart_width = alt.theme.options.get("chartWidth", 100)
+        # x anchor and inset from chart edge
+        x_anchor, edge_dx = {
+            "left": (0, 4),
+            "center": (chart_width / 2, 0),
+            "right": (chart_width, -4),
+        }[la]
+        # dy: above or below the line; baseline keeps text clear of the line
+        dy = -labelOffset if lp == "top" else labelOffset
+        vl_baseline = "bottom" if lp == "top" else "top"
+
+        ldf = pl.DataFrame({"__v": [float(v) for v in vals], "__label": labels})
+        text_kwargs: dict = {
+            "align": la,  # "left"/"center"/"right" maps directly to Vega-Lite align
+            "dx": edge_dx,
+            "dy": dy,
+            "baseline": vl_baseline,
+            "fontSize": fs,
+        }
+        if color is not None:
+            text_kwargs["color"] = color
+        text = (
+            alt.Chart(ldf)
+            .mark_text(**text_kwargs)
+            .encode(
+                y=alt.Y("__v:Q", title=None),
+                text=alt.Text("__label:N"),
+                x=alt.value(x_anchor),
+            )
+        )
+        return alt.layer(rule, text)
+
+    else:  # axis == "x"
+        # Vertical rule: value is an x-coordinate.
+        # labelAlign controls where along the line (y-axis): "top", "center", "bottom".
+        # labelPosition controls which side of the line (x-axis): "right", "left".
+        df = pl.DataFrame({"__v": [float(v) for v in vals]})
+        rule = alt.Chart(df).mark_rule(**mark_kwargs).encode(x=alt.X("__v:Q", title=None))
+        if label is None:
+            return rule
+
+        labels = [label] if isinstance(label, str) else list(label)
+        if len(labels) != len(vals):
+            raise ValueError(f"label has {len(labels)} items but value has {len(vals)}")
+
+        la = labelAlign if labelAlign is not None else "top"
+        lp = labelPosition if labelPosition is not None else "right"
+        if la not in ("top", "center", "bottom"):
+            raise ValueError(
+                f"labelAlign must be 'top', 'center', or 'bottom' for axis='x', got {la!r}"
+            )
+        if lp not in ("left", "right"):
+            raise ValueError(f"labelPosition must be 'left' or 'right' for axis='x', got {lp!r}")
+
+        chart_height = alt.theme.options.get("chartHeight", 100)
+        # y anchor, inset from chart edge, and Vega-Lite baseline
+        y_anchor, edge_dy, vl_baseline = {
+            "top": (0, 4, "top"),
+            "center": (chart_height / 2, 0, "middle"),
+            "bottom": (chart_height, -4, "bottom"),
+        }[la]
+        # dx: right or left of the line; Vega-Lite align keeps text clear of the line
+        dx = labelOffset if lp == "right" else -labelOffset
+        vl_align = "left" if lp == "right" else "right"
+
+        ldf = pl.DataFrame({"__v": [float(v) for v in vals], "__label": labels})
+        text_kwargs = {
+            "align": vl_align,
+            "dx": dx,
+            "dy": edge_dy,
+            "baseline": vl_baseline,
+            "fontSize": fs,
+        }
+        if color is not None:
+            text_kwargs["color"] = color
+        text = (
+            alt.Chart(ldf)
+            .mark_text(**text_kwargs)
+            .encode(
+                x=alt.X("__v:Q", title=None),
+                text=alt.Text("__label:N"),
+                y=alt.value(y_anchor),
+            )
+        )
+        return alt.layer(rule, text)
+
+
+# Background shading
+
 
 def add_shade(
     categories: list[str] | None = None,
@@ -313,6 +531,9 @@ def add_shade(
         i = j
 
     return alt.layer(*run_layers)
+
+
+# Multilabel annotations
 
 
 def _multilabel_layer(
