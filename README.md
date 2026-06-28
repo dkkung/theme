@@ -2,8 +2,6 @@
 
 An Altair configuration wrapper with perceptually uniform palettes and chart utilities for publication-ready figures.
 
-*This is a personal project under active development, so there may be breaking changes between minor versions.*
-
 ![thumbnail](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/thumbnail_light.png)
 
 ## Installation
@@ -56,7 +54,7 @@ ds.save(chart, "plots/myplot")
 ```python
 ds.theme()  # apply defaults
 
-ds.theme(   # custom configuration
+ds.theme(  # custom configuration
     chartWidth=400,
     chartHeight=250,
     fontSize=8,
@@ -120,7 +118,7 @@ All custom palettes are built in [Oklab](https://bottosson.github.io/posts/oklab
 ```python
 from dysonsphere.palettes import colors
 
-blues = colors["blues"]   # list of 12 hex strings, light → dark
+blues = colors["blues"]  # list of 12 hex strings, light → dark
 ```
 
 ### dysonsphere.palette()
@@ -128,10 +126,10 @@ blues = colors["blues"]   # list of 12 hex strings, light → dark
 Samples a slice or subset from any named palette.
 
 ```python
-ds.palette("blues")                     # all 12 stops
-ds.palette("blues", n=5)                # 5 evenly-spaced stops
-ds.palette("blues", start=3)            # stops 3–11
-ds.palette("blues", end=6, step=2)      # indices 0, 2, 4, 6
+ds.palette("blues")  # all 12 stops
+ds.palette("blues", n=5)  # 5 evenly-spaced stops
+ds.palette("blues", start=3)  # stops 3–11
+ds.palette("blues", end=6, step=2)  # indices 0, 2, 4, 6
 ds.palette("blues", n=4, reverse=True)  # reversed
 ```
 
@@ -203,11 +201,11 @@ ds.save(chart, "plots/myplot")
 Produces light and dark PNG and SVG files from a single call. SVG output is post-processed to flatten Vega's redundant `<g>` wrappers, making it easier to navigate in Illustrator. A Vega-Lite JSON spec is also saved by default for full reproducibility.
 
 ```python
-ds.save(chart, "myplot", ppi=1200)                     # default PPI; reduce for faster exports
-ds.save(chart, "myplot", saveVegaSpec=False)           # skip the JSON spec
-ds.save(chart, "myplot", description="Figure 1")       # embed a description in the SVG
-ds.save(chart, "myplot", background=["light"])         # light variant only
-ds.save(chart, "myplot", background=["dark"])          # dark variant only
+ds.save(chart, "myplot", ppi=1200)  # default PPI; reduce for faster exports
+ds.save(chart, "myplot", saveVegaSpec=False)  # skip the JSON spec
+ds.save(chart, "myplot", description="Figure 1")  # embed a description in the SVG
+ds.save(chart, "myplot", background=["light"])  # light variant only
+ds.save(chart, "myplot", background=["dark"])  # dark variant only
 ```
 
 ---
@@ -258,6 +256,56 @@ alt.Chart(df).mark_circle().encode(
 
 ---
 
+## Custom marks
+
+### dysonsphere.mark_violin()
+
+Violin plot with an embedded boxplot.
+
+```python
+ds.theme(chartWidth=300)
+palette = ds.palette("lavenders", n=len(CATEGORIES))
+
+chart = ds.mark_violin(df, "group", "value", CATEGORIES, palette=palette)
+ds.save(chart, "violin")
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `df` | required | Polars or pandas DataFrame |
+| `xCol` | required | Grouping column name |
+| `yCol` | required | Value column name |
+| `categories` | required | Ordered list of group labels |
+| `palette` | `None` | Single color or list of colors for violin fills |
+| `boxplotSize` | `theme(markSize) * 0.8` | Boxplot box width in pixels |
+| `boxplotColor` | `"black"` | Boxplot fill color |
+| `fillOpacity` | `theme(markFillOpacity)` | Violin fill opacity |
+| `stroke` | `None` | Violin outline color (`None` = no outline) |
+| `strokeWidth` | `theme(markStrokeWidth)` | Violin outline width |
+| `legend` | `False` | Show a color legend |
+| `angledX` | `theme(angledX)` | Angle x-axis labels |
+| `steps` | `200` | KDE grid resolution per group |
+
+### dysonsphere.mark_strip()
+
+Jittered or beeswarm points with a median tick and optional mean ± error bars.
+
+```python
+chart = ds.mark_strip(df, "group", "value", CATEGORIES)
+chart = ds.mark_strip(df, "group", "value", CATEGORIES, scatter="beeswarm")
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `scatter` | `"jitter"` | `"jitter"` (fast, random Gaussian) or `"beeswarm"` (collision-avoidance) |
+| `palette` | `None` | List of colors for points |
+| `pointSize` | `theme(markSize)` | Point size in sq px |
+| `spread` | `None` | Point spread in pixels. For jitter: std dev (defaults to `min(chartWidth, chartHeight) / 50`). For beeswarm: collision radius (defaults to `√(markSize/π)` from theme) |
+| `errorbars` | `True` | Show mean ± error bars |
+| `errorbarExtent` | `"sem"` | `"sem"` or `"sd"` |
+
+---
+
 ## Statistical annotations
 
 `add_pvalue()` annotates one or more group comparisons with p-value brackets, stacking them automatically so they don't overlap. Combine with any chart using `+`.
@@ -267,14 +315,18 @@ CATEGORIES = ["Group A", "Group B", "Group C"]
 
 # single comparison
 chart + ds.add_pvalue(
-    df, "group", "value",
+    df,
+    "group",
+    "value",
     pairs=[("Group A", "Group B")],
     categories=CATEGORIES,
 )
 
 # multiple comparisons — brackets stacked automatically
 chart + ds.add_pvalue(
-    df, "group", "value",
+    df,
+    "group",
+    "value",
     pairs=[("Group A", "Group B"), ("Group A", "Group C"), ("Group B", "Group C")],
     categories=CATEGORIES,
 )
@@ -290,7 +342,9 @@ Brackets below the marks using `reverse` — requires negative `yStep` so levels
 
 ```python
 ds.add_pvalue(
-    df, "group", "value",
+    df,
+    "group",
+    "value",
     pairs=[("A", "B")],
     categories=["A", "B"],
     bracketStyle="bracket",
@@ -333,8 +387,8 @@ ds.add_pvalue(
 
 ```python
 CONDITIONS = {
-    "Condition 1": [True,  False, True,  True],
-    "Condition 2": [False, False, True,  False],
+    "Condition 1": [True, False, True, True],
+    "Condition 2": [False, False, True, False],
     "Condition 3": [False, False, False, True],
 }
 
@@ -359,8 +413,8 @@ ds.add_multilabel(
     style="symbol",
     showSampleSize=True,
     df=df,
-    xCol="group",           # column used for x-axis grouping
-    sampleSizeIndex=0,      # insertion position among rows (default 0 = first)
+    xCol="group",  # column used for x-axis grouping
+    sampleSizeIndex=0,  # insertion position among rows (default 0 = first)
     sampleSizeLabel="n =",  # row label (default "n =")
 )
 ```
@@ -387,8 +441,8 @@ ds.add_multilabel(
     style="symbol",
     categoryLabel=True,
     categoryLabelPosition="bottom",  # "top" or "bottom" (default "bottom")
-    categoryLabelAngle=-45,          # degrees; default -45
-    categoryLabelHeight=None,        # auto-computed when None
+    categoryLabelAngle=-45,  # degrees; default -45
+    categoryLabelHeight=None,  # auto-computed when None
 )
 ```
 
@@ -490,7 +544,7 @@ shade = ds.add_shade(
 
 ---
 
-## Minor ticks for non-linear scales
+## Non-linear axes
 
 `add_log_ticks()` and `add_pow_ticks()` add unlabeled minor ticks to log- and power-scaled axes respectively. Both wrap your chart in a layer with an invisible second axis — your chart's data, scale domain, and axis labels are unaffected. Both work with `alt.Chart`, `alt.LayerChart`, and any chart type composable with `alt.layer()`, including `hconcat` and `vconcat` layouts.
 
@@ -509,19 +563,19 @@ For other label styles, use Vega-Lite's `format=` parameter on `alt.Axis` direct
 
 ```python
 # power notation — base-10 y-axis: 10⁴, 10⁵, 10⁶, …
-axis=alt.Axis(
+axis = alt.Axis(
     values=[10**e for e in range(exp_min, exp_max + 1)],
     labelExpr=ds.log_label_expr(),
 )
 
 # power notation — log2 x-axis: 2⁰, 2¹, …, 2²⁰
-axis=alt.Axis(
+axis = alt.Axis(
     values=[2**e for e in range(0, 21)],
     labelExpr=ds.log_label_expr(base=2),
 )
 
 # scientific notation — base-10 y-axis: 1×10⁴, 1×10⁵, 1×10⁶, …
-axis=alt.Axis(
+axis = alt.Axis(
     values=[10**e for e in range(exp_min, exp_max + 1)],
     labelExpr=ds.log_label_expr(notation="scientific"),
 )
@@ -546,7 +600,8 @@ chart = (
     alt.Chart(df)
     .mark_line(point=True)
     .encode(
-        y=alt.Y("value:Q",
+        y=alt.Y(
+            "value:Q",
             scale=alt.Scale(type="log", base=10),
             axis=alt.Axis(values=[10**e for e in range(exp_min, exp_max + 1)]),
         ),
@@ -560,7 +615,8 @@ chart = (
     alt.Chart(df)
     .mark_point()
     .encode(
-        x=alt.X("fc:Q",
+        x=alt.X(
+            "fc:Q",
             scale=alt.Scale(type="log", base=2, domain=[2**exp_min, 2**exp_max]),
             axis=alt.Axis(values=[2**e for e in range(exp_min, exp_max + 1)]),
         ),
@@ -606,7 +662,8 @@ chart = (
     alt.Chart(df)
     .mark_point()
     .encode(
-        y=alt.Y("value:Q",
+        y=alt.Y(
+            "value:Q",
             scale=alt.Scale(type="pow", exponent=0.5),
             axis=alt.Axis(values=major_values),
         ),
@@ -616,7 +673,9 @@ chart = ds.add_pow_ticks(chart, df, "value", majorValues=major_values)
 
 # sqrt x-axis with 4 minor ticks per interval
 chart = ds.add_pow_ticks(
-    chart, df, "length",
+    chart,
+    df,
+    "length",
     axis="x",
     exponent=0.5,
     majorValues=[0.25, 1.0, 2.25, 4.0],
@@ -625,9 +684,11 @@ chart = ds.add_pow_ticks(
 
 # both axes power-scaled
 chart = ds.add_pow_ticks(
-    chart, df,
+    chart,
+    df,
     axis="both",
-    xField="length", yField="value",
+    xField="length",
+    yField="value",
     xMajorValues=[0.25, 1.0, 2.25, 4.0],
     yMajorValues=[0, 1, 4, 9, 16, 25],
 )
@@ -647,56 +708,6 @@ chart = ds.add_pow_ticks(
 | `yField` | `None` | Power-scaled y column (`axis='both'` only) |
 | `xMajorValues` | `None` | Major tick values for x axis (`axis='both'` only) |
 | `yMajorValues` | `None` | Major tick values for y axis (`axis='both'` only) |
-
----
-
-## Custom marks
-
-### dysonsphere.mark_violin()
-
-Violin plot with an embedded boxplot.
-
-```python
-ds.theme(chartWidth=300)
-palette = ds.palette("lavenders", n=len(CATEGORIES))
-
-chart = ds.mark_violin(df, "group", "value", CATEGORIES, palette=palette)
-ds.save(chart, "violin")
-```
-
-| Parameter | Default | Description |
-|---|---|---|
-| `df` | required | Polars or pandas DataFrame |
-| `xCol` | required | Grouping column name |
-| `yCol` | required | Value column name |
-| `categories` | required | Ordered list of group labels |
-| `palette` | `None` | Single color or list of colors for violin fills |
-| `boxplotSize` | `theme(markSize) * 0.8` | Boxplot box width in pixels |
-| `boxplotColor` | `"black"` | Boxplot fill color |
-| `fillOpacity` | `theme(markFillOpacity)` | Violin fill opacity |
-| `stroke` | `None` | Violin outline color (`None` = no outline) |
-| `strokeWidth` | `theme(markStrokeWidth)` | Violin outline width |
-| `legend` | `False` | Show a color legend |
-| `angledX` | `theme(angledX)` | Angle x-axis labels |
-| `steps` | `200` | KDE grid resolution per group |
-
-### dysonsphere.mark_strip()
-
-Jittered or beeswarm points with a median tick and optional mean ± error bars.
-
-```python
-chart = ds.mark_strip(df, "group", "value", CATEGORIES)
-chart = ds.mark_strip(df, "group", "value", CATEGORIES, scatter="beeswarm")
-```
-
-| Parameter | Default | Description |
-|---|---|---|
-| `scatter` | `"jitter"` | `"jitter"` (fast, random Gaussian) or `"beeswarm"` (collision-avoidance) |
-| `palette` | `None` | List of colors for points |
-| `pointSize` | `theme(markSize)` | Point size in sq px |
-| `spread` | `None` | Point spread in pixels. For jitter: std dev (defaults to `min(chartWidth, chartHeight) / 50`). For beeswarm: collision radius (defaults to `√(markSize/π)` from theme) |
-| `errorbars` | `True` | Show mean ± error bars |
-| `errorbarExtent` | `"sem"` | `"sem"` or `"sd"` |
 
 ---
 
