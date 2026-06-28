@@ -278,6 +278,12 @@ def _fix_log_minor_ticks(path: str) -> None:
     collected tick lines (major vs minor). Auto-detects whether spacing is
     base-10 style (non-uniform 2×–9× gaps) or equal-log-space (base-2 etc.)
     by checking gap uniformity within the first interval.
+
+    Ticks are grouped by their accumulated parent-group x-offset before
+    processing. This prevents cross-panel contamination in hconcat charts
+    where multiple panels share the same local y-coordinate range but carry
+    different axis scales — without grouping, major ticks from a linear axis
+    in one panel would corrupt interval detection for a log axis in another.
     """
     import math
     import re
@@ -290,6 +296,8 @@ def _fix_log_minor_ticks(path: str) -> None:
     tree = ET.parse(path)
     root = tree.getroot()
     changed = False
+
+    _TRANSLATE = re.compile(r"translate\(\s*([0-9.-]+)\s*[,\s]\s*([0-9.-]+)\s*\)")
 
     def _correct_axis(major_positions: list[float], minor_els: list, is_x: bool) -> None:
         nonlocal changed
@@ -347,51 +355,71 @@ def _fix_log_minor_ticks(path: str) -> None:
                             changed = True
                     break
 
-    # --- Y-axis: translate(0,N) with x2 < 0 ---
-    y_tick_lines: list[tuple[ET.Element, float, float]] = []
-    for el in root.iter(f"{{{NS}}}line"):
-        t = el.get("transform", "")
-        x2_str = el.get("x2", "")
-        m = re.match(r"translate\(0,([0-9.-]+)\)$", t)
-        if not (m and x2_str):
-            continue
-        try:
-            x2_val = float(x2_str)
-        except ValueError:
-            continue
-        if x2_val < 0:
-            y_tick_lines.append((el, float(m.group(1)), abs(x2_val)))
+    # Walk the SVG tree, accumulating parent <g> transforms to build a
+    # (cx, cy) context key for each tick line. Panels in hconcat have
+    # different accumulated cx values; panels in vconcat have different cy
+    # values. Grouping by (cx, cy) prevents cross-panel contamination in
+    # both layouts — e.g. a linear axis in one hconcat panel cannot pollute
+    # the major-position list used to correct a log axis in another.
+    #
+    # y_groups[(cx,cy)] = [(el, local_y, tick_size), ...]
+    # x_groups[(cx,cy)] = [(el, local_x, tick_size), ...]
+    y_groups: dict[tuple[float, float], list] = {}
+    x_groups: dict[tuple[float, float], list] = {}
 
-    if y_tick_lines:
-        sizes = sorted({s for _, _, s in y_tick_lines}, reverse=True)
+    def _collect(el: ET.Element, cx: float = 0.0, cy: float = 0.0) -> None:
+        for child in el:
+            child_cx, child_cy = cx, cy
+            t = child.get("transform", "")
+            m = _TRANSLATE.match(t)
+            if m:
+                child_cx += float(m.group(1))
+                child_cy += float(m.group(2))
+
+            if child.tag == f"{{{NS}}}line":
+                lt = child.get("transform", "")
+                my = re.match(r"translate\(0,([0-9.-]+)\)$", lt)
+                mx = re.match(r"translate\(([0-9.-]+),0\)$", lt)
+                x2_str = child.get("x2", "")
+                y2_str = child.get("y2", "")
+                if my and x2_str:
+                    try:
+                        x2_val = float(x2_str)
+                    except ValueError:
+                        x2_val = 0.0
+                    if x2_val < 0:
+                        y_groups.setdefault((cx, cy), []).append(
+                            (child, float(my.group(1)), abs(x2_val))
+                        )
+                elif mx and y2_str:
+                    try:
+                        y2_val = float(y2_str)
+                    except ValueError:
+                        y2_val = 0.0
+                    if 0 < y2_val < 20:
+                        x_groups.setdefault((cx, cy), []).append(
+                            (child, float(mx.group(1)), y2_val)
+                        )
+            else:
+                _collect(child, child_cx, child_cy)
+
+    _collect(root)
+
+    # Process each panel's y-axis and x-axis ticks independently.
+    for ticks in y_groups.values():
+        sizes = sorted({s for _, _, s in ticks}, reverse=True)
         if len(sizes) >= 2:
             major_size, minor_size = sizes[0], sizes[-1]
-            major_ys = sorted(y for _, y, s in y_tick_lines if s == major_size)
-            minor_els = [(el, y) for el, y, s in y_tick_lines if s == minor_size]
+            major_ys = sorted(y for _, y, s in ticks if s == major_size)
+            minor_els = [(el, y) for el, y, s in ticks if s == minor_size]
             _correct_axis(major_ys, minor_els, is_x=False)
 
-    # --- X-axis: translate(N,0) with 0 < y2 < 20 ---
-    # Upper bound excludes mark_rule elements whose y2 equals the chart height.
-    x_tick_lines: list[tuple[ET.Element, float, float]] = []
-    for el in root.iter(f"{{{NS}}}line"):
-        t = el.get("transform", "")
-        y2_str = el.get("y2", "")
-        m = re.match(r"translate\(([0-9.-]+),0\)$", t)
-        if not (m and y2_str):
-            continue
-        try:
-            y2_val = float(y2_str)
-        except ValueError:
-            continue
-        if 0 < y2_val < 20:
-            x_tick_lines.append((el, float(m.group(1)), y2_val))
-
-    if x_tick_lines:
-        sizes = sorted({s for _, _, s in x_tick_lines}, reverse=True)
+    for ticks in x_groups.values():
+        sizes = sorted({s for _, _, s in ticks}, reverse=True)
         if len(sizes) >= 2:
             major_size, minor_size = sizes[0], sizes[-1]
-            major_xs = sorted(x for _, x, s in x_tick_lines if s == major_size)
-            minor_els = [(el, x) for el, x, s in x_tick_lines if s == minor_size]
+            major_xs = sorted(x for _, x, s in ticks if s == major_size)
+            minor_els = [(el, x) for el, x, s in ticks if s == minor_size]
             _correct_axis(major_xs, minor_els, is_x=True)
 
     if changed:

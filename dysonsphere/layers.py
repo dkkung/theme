@@ -288,7 +288,7 @@ def add_shade(
 
     band_padding = alt.theme.options.get("bandPadding", 0.1)
     chart_width = alt.theme.options.get("chartWidth", 100)
-    # step = range / (n + 2*bandPadding); band i spans [step*(bandPadding+i), step*(bandPadding+i+1)].
+    # step = range/(n + 2*bandPadding); band i spans [step*(bp+i), step*(bp+i+1)].
     step = chart_width / (n + 2 * band_padding)
 
     if flush is None:
@@ -525,9 +525,9 @@ def _multilabel_layer(
         return s
 
     row_styles = {label: _row_style(label) for label in row_order}
-    plusminus_rows = [l for l in row_order if row_styles[l] == "plusminus"]
-    text_rows = [l for l in row_order if row_styles[l] == "text"]
-    symbol_rows = [l for l in row_order if row_styles[l] == "symbol"]
+    plusminus_rows = [r for r in row_order if row_styles[r] == "plusminus"]
+    text_rows = [r for r in row_order if row_styles[r] == "text"]
+    symbol_rows = [r for r in row_order if row_styles[r] == "symbol"]
 
     if chartWidth is None:
         chartWidth = alt.theme.options.get("chartWidth", 100)
