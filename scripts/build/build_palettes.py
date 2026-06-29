@@ -70,6 +70,9 @@ N_DENSE = 4000  # dense path resolution before arc-length resampling
 SEQ_FRAC = 0.65  # sequential single-hue and multi-hue
 DIVERG_FRAC = 0.85  # diverging base palettes
 DIVERG_SAT_FRAC = 1.0  # *_sat diverging variants
+PASTEL_FRAC = 0.35  # sequential single-hue "3" (pastel) variants
+PASTEL_L_LO = 0.70  # dark end: stays medium-light (true pastel territory)
+PASTEL_L_HI = 0.95  # light end: nearly white
 
 
 # ── sRGB ↔ linear ───────────────────────────────────────────────────────
@@ -432,6 +435,24 @@ SEQ_SINGLE_OKLAB = {
     "lavenders": (285, 0.30, 0.95),
 }
 
+# All 14 base single-hue palettes in gallery order — used to build "3" pastel set.
+SEQ_SINGLE_NAMES = [
+    "blues",
+    "greens",
+    "purples",
+    "lavenders",
+    "violets",
+    "greys",
+    "reds",
+    "pinks",
+    "oranges",
+    "browns",
+    "yellows",
+    "cyans",
+    "magentas",
+    "neongreens",
+]
+
 # Multi-hue Oklab keyframes.  Format: name → [(L, hue_deg), ...] light → dark.
 SEQ_MULTI_OKLAB = {
     # Warm-into-magenta sweep (ember stays in the warm/magenta arc).
@@ -582,6 +603,60 @@ DIVERG_SEQ2_PAIRS = [
     ("greys2", "neongreens2"),
 ]
 
+DIVERG_SEQ3_PAIRS = [
+    ("reds3", "blues3"),
+    ("purples3", "greens3"),
+    ("lavenders3", "greens3"),
+    ("lavenders3", "blues3"),
+    ("purples3", "blues3"),
+    ("browns3", "blues3"),
+    ("pinks3", "blues3"),
+    ("greys3", "blues3"),
+    ("greys3", "reds3"),
+    ("greys3", "purples3"),
+    ("greys3", "lavenders3"),
+    ("greys3", "pinks3"),
+    ("greens3", "blues3"),
+    ("reds3", "greens3"),
+    ("reds3", "cyans3"),
+    ("reds3", "lavenders3"),
+    ("reds3", "violets3"),
+    ("reds3", "neongreens3"),
+    ("pinks3", "cyans3"),
+    ("pinks3", "greens3"),
+    ("pinks3", "neongreens3"),
+    ("oranges3", "blues3"),
+    ("oranges3", "cyans3"),
+    ("oranges3", "purples3"),
+    ("oranges3", "lavenders3"),
+    ("oranges3", "violets3"),
+    ("oranges3", "neongreens3"),
+    ("yellows3", "blues3"),
+    ("yellows3", "purples3"),
+    ("yellows3", "lavenders3"),
+    ("browns3", "greens3"),
+    ("browns3", "cyans3"),
+    ("browns3", "neongreens3"),
+    ("magentas3", "neongreens3"),
+    ("magentas3", "greens3"),
+    ("magentas3", "blues3"),
+    ("magentas3", "cyans3"),
+    ("violets3", "oranges3"),
+    ("violets3", "yellows3"),
+    ("cyans3", "purples3"),
+    ("cyans3", "lavenders3"),
+    ("cyans3", "violets3"),
+    ("purples3", "neongreens3"),
+    ("lavenders3", "neongreens3"),
+    ("greys3", "greens3"),
+    ("greys3", "yellows3"),
+    ("greys3", "oranges3"),
+    ("greys3", "cyans3"),
+    ("greys3", "magentas3"),
+    ("greys3", "violets3"),
+    ("greys3", "neongreens3"),
+]
+
 
 # ── Main: build everything and print ─────────────────────────────────────
 
@@ -614,6 +689,19 @@ def main():
     for arm1, arm2 in DIVERG_SEQ2_PAIRS:
         name = arm1.removesuffix("2") + arm2  # e.g. "reds2","blues2" → "redsblues2"
         _print_palette(name, build_diverging(_pal[arm1][7], _pal[arm2][7]))
+
+    print("\n# ─── Sequential single-hue '3' (pastel, Oklab) ───────────────────────")
+    for name in SEQ_SINGLE_NAMES:
+        base = _pal[name]
+        _, a, b = hex_to_oklab(base[5])
+        hue_deg = math.degrees(math.atan2(b, a)) % 360
+        frac = 0.0 if name == "greys" else PASTEL_FRAC
+        _print_palette(f"{name}3", build_single_hue(hue_deg, PASTEL_L_LO, PASTEL_L_HI, frac=frac))
+
+    print("\n# ─── Diverging — '3'-suffix single-hue pairs (pastel, FRAC=0.35) ────────────")
+    for arm1, arm2 in DIVERG_SEQ3_PAIRS:
+        name = arm1.removesuffix("3") + arm2  # e.g. "reds3","blues3" → "redsblues3"
+        _print_palette(name, build_diverging(_pal[arm1][11], _pal[arm2][11], frac=PASTEL_FRAC))
 
     print("\n# ─── Desaturation ladder example (bluestgrotto → bluergrotto → bluegrotto)")
     base = build_multihue(SEQ_MULTI_OKLAB["bluestgrotto"])
