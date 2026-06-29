@@ -93,7 +93,7 @@ def theme(
     alt.theme.options["grid"] = grid
     alt.theme.options["gridColor"] = gridColor
     alt.theme.options["legend"] = legend
-    alt.theme.options["legendOffset"] = legendOffset  # falls back to tickSize in custom()
+    alt.theme.options["legendOffset"] = legendOffset
     alt.theme.options["legendStroke"] = legendStroke
     alt.theme.options["markFill"] = markFill
     alt.theme.options["markFillOpacity"] = markFillOpacity
@@ -124,8 +124,8 @@ def theme(
     alt.theme.options["yTicks"] = yTicks
 
 
-@alt.theme.register("custom", enable=True)
-def custom():
+@alt.theme.register("dysonsphere", enable=True)
+def _dysonsphere_theme():
     opts = alt.theme.options
     return {
         "background": (
@@ -394,8 +394,6 @@ def custom():
                     if opts.get("palette") is not None
                     else colors["blues"]
                 },
-                # "symbol": ["circle", "square", "diamond", "triangle-up", "triangle-down", "cross"],  # noqa: E501
-                # "strokeDash": [[1, 0], [4, 2], [2, 2], [4, 2, 1, 2], [1, 2]],
             },
             "rule": {
                 "color": "white" if opts["darkmode"] else "black",
