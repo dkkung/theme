@@ -560,9 +560,9 @@ def create_config(directory: str | Path | None = None, *, persistent: bool = Fal
     """
     Write a dysonsphere.toml template to *directory* (default: current working directory).
 
-    Pass persistent=True to write to the XDG user config directory
-    (~/.config/dysonsphere/dysonsphere.toml) instead — this file applies across
-    all your projects.
+    Pass persistent=True to write to the platform user config directory instead
+    (~/.config/dysonsphere/ on macOS/Linux, %APPDATA%/dysonsphere/ on Windows).
+    This file applies across all your projects.
 
     The file is not overwritten if it already exists. Edit the values in each
     section, rename [my_style] to your own style name, and load it with
