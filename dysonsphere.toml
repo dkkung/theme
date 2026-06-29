@@ -1,0 +1,21 @@
+# dysonsphere theme configuration
+#
+# Place this file in your project root or at
+# ~/.config/dysonsphere/dysonsphere.toml for user-wide defaults.
+#
+# Format: TOML sections, one per named style.
+# Load a style with: ds.theme(style="nih")
+#
+# [default] is optional — omit it or leave it empty to use dysonsphere's
+# built-in defaults unchanged. Add keys here only to override specific
+# parameters for every ds.theme() call regardless of style.
+[default]
+
+[nih]
+fontSize = 6
+axisWidth = 0.5
+fontWeight = 400
+
+[presentation]
+fontSize = 12
+darkmode=true
