@@ -125,19 +125,21 @@ Each file contains named style sections. Load a style with `ds.theme(style="name
 [default]
 
 [nih]
-fontSize = 6
 axisWidth = 0.5
+fontSize = 6
 fontWeight = 400
 
 [notebook]
-chartWidth=600
-chartHeight=600
+chartWidth=900
+chartHeight=900
 darkmode=true
-chartBackground="transparent"
+fontSize=18
+transparentBackground=true
 
 [presentation]
 fontSize = 12
 darkmode=true
+transparentBackground=true
 ```
 
 ```python
@@ -148,6 +150,10 @@ ds.theme()                            # back to dysonsphere built-in defaults
 ```
 
 Only the keys present in a section are applied — everything else uses the dysonsphere built-in defaults. Explicit kwargs always take precedence over the config file. Unknown section keys raise a `ValueError` immediately.
+
+#### `notebook` style
+
+The `notebook` style is useful for plotting in interactive notebooks, and defaults to using `darkmode=True` plots with a transparent background (*white axes and text, larger `chart` areas, and larger font sizes*).
 
 ---
 

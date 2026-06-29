@@ -12,16 +12,18 @@
 [default]
 
 [nih]
-fontSize = 6
 axisWidth = 0.5
+fontSize = 6
 fontWeight = 400
 
 [notebook]
-chartWidth=600
-chartHeight=600
+chartWidth=900
+chartHeight=900
 darkmode=true
-chartBackground="transparent"
+fontSize=18
+transparentBackground=true
 
 [presentation]
 fontSize = 12
 darkmode=true
+transparentBackground=true
