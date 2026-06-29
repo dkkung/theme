@@ -271,7 +271,7 @@ def custom():
             "circle": {
                 "fill": "white",
                 "fillOpacity": opts["markFillOpacity"],
-                "size": opts["markSize"] / 5,
+                "size": opts["markSize"] / 4,
                 "stroke": "black" if opts["darkmode"] else opts["markStroke"],
                 "strokeOpacity": opts["markStrokeOpacity"],
                 "strokeWidth": opts["markStrokeWidth"],
@@ -291,15 +291,15 @@ def custom():
             },
             "errorbar": {
                 "opacity": 1,
-                "rule": {"strokeDash": [0, 0], "strokeWidth": opts["markStrokeWidth"] * 2},
+                "rule": {"strokeDash": [0, 0], "strokeWidth": opts["markStrokeWidth"]},
                 "ticks": {
                     "color": "white" if opts["darkmode"] else "black",
                     "cornerRadius": opts["markStrokeWidth"],
                     "opacity": 1,
                     "size": opts["markSize"] * 0.6,
-                    "thickness": opts["markStrokeWidth"] * 2,
+                    "thickness": opts["markStrokeWidth"],
                 },
-                "thickness": opts["markStrokeWidth"] * 2,
+                "thickness": opts["markStrokeWidth"],
             },
             "font": opts["font"],
             "geoshape": {
