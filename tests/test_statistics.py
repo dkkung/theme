@@ -3,7 +3,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from dysonsphere.statistics import _format_asterisks, _format_pvalue, add_pvalue
+from dysonsphere.layers import _format_asterisks, _format_pvalue, add_pvalue
 from dysonsphere.theme import theme
 
 CATEGORIES = ["A", "B"]
