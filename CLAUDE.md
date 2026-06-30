@@ -1,0 +1,228 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```sh
+# Lint
+uv run ruff check dysonsphere/ tests/ scripts/
+
+# Format
+uv run ruff format dysonsphere/ tests/ scripts/
+
+# Type check
+uv run ty check dysonsphere/ tests/ scripts/
+
+# Test
+uv run pytest tests/
+
+# Run all build scripts (globs scripts/build/*.py in sorted order)
+uv run python scripts/build_all.py
+
+# Print palette hex literals to stdout — paste into palettes.py
+uv run python scripts/build/print_palettes.py
+
+# Rebuild gallery → docs/index.html
+uv run python scripts/build/build_gallery.py
+
+# Rebuild data transforms example → docs/transforms_example_light.png
+uv run python scripts/build/build_transforms_example.py
+
+# Rebuild custom marks example → docs/marks_example_light.png
+uv run python scripts/build/build_marks_example.py
+
+# Rebuild multilabel example → docs/multilabel_example_light.png
+uv run python scripts/build/build_multilabel_example.py
+
+# Rebuild p-value annotation example → docs/pvalue_example_light.png
+uv run python scripts/build/build_pvalue_example.py
+
+# Rebuild shade example → docs/shade_example_light.png
+uv run python scripts/build/build_shade_example.py
+
+# Rebuild reference line example → docs/reference_line_example_light.png
+uv run python scripts/build/build_reference_line_example.py
+
+# Rebuild text annotation example → docs/text_example_light.png
+uv run python scripts/build/build_text_example.py
+
+# Rebuild nonlinear scale example → docs/nonlinear_example_light.png
+uv run python scripts/build/build_nonlinear_example.py
+
+# Export Illustrator swatches → scripts/illustrator/import_dysonsphere_palettes_to_illustrator.jsx + scripts/illustrator/dysonsphere.ase
+uv run python scripts/illustrator/export_swatches_to_illustrator.py
+
+# Build package
+uv build
+```
+
+Validate functional correctness by running `uv run pytest tests/`. Validate visual output by running the build scripts and inspecting the results.
+
+## Style conventions
+
+- Use `-` instead of em dashes (`—`) in comments, config files, and generated text.
+- Maximum line length is 120 characters (`[tool.ruff] line-length = 120`). E501 is enforced across all Python files including tests and scripts. The formatter handles code automatically; comments and strings must be wrapped manually when over the limit.
+
+## Architecture
+
+`dysonsphere` is an [Altair](https://altair-viz.github.io/) theme and chart utility library. It wraps Vega-Lite's theme system to provide perceptually uniform palettes and publication-ready chart defaults.
+
+### Module layout
+
+- **`dysonsphere/palettes.py`** — All palette data as plain `dict[str, list[str]]` called `colors`. Each value is a list of hex strings (12 stops for sequential, 13 for diverging). No color math runs at import time; hex values are precomputed literals. The `palette()` helper slices/samples from this dict. `export_swatches(directory=None)` writes two files to `directory` (default: cwd): (1) `import_dysonsphere_palettes_to_illustrator.jsx` — an Illustrator ExtendScript (run via File > Scripts > Other Script...) that adds all palettes to the active document's Swatches panel as named groups; (2) `dysonsphere.ase` — an ASE (Adobe Swatch Exchange) binary file containing all palettes as named groups, automatically copied to the Illustrator User Defined Swatches folder via `_find_illustrator_swatches()` (scans macOS `~/Library/Application Support/Adobe/Adobe Illustrator */{locale}/Swatches/` and Windows `%APPDATA%/Adobe/...`); falls back to printing a copy instruction. After restarting Illustrator, `dysonsphere.ase` appears under Open Swatch Library > User Defined > dysonsphere. `_write_ase(palette_colors, path)` generates the binary: `ASEF` header + block count + group-start/color/group-end blocks with UTF-16BE names and big-endian float RGB values.
+
+- **`dysonsphere/theme.py`** — `theme()` registers a custom Altair theme via `alt.themes.register` and `alt.themes.enable`. Calling `theme()` replaces the active theme globally for all subsequent Altair charts in the session.
+
+- **`dysonsphere/export.py`** — `save()` exports a chart to PNG, SVG (with flattened `<g>` wrappers), and Vega-Lite JSON using `vl-convert`. Accepts `_AltairChart | Callable[[], _AltairChart]` where `_AltairChart = alt.Chart | alt.LayerChart | alt.FacetChart | alt.VConcatChart | alt.HConcatChart | alt.ConcatChart`. Also contains `_fix_tick_alignment()` (SVG post-processing to correct Vega's integer-floored axis tick and grid line x-positions; also extends grid line y-span by `axis_offset` to eliminate the top-border gap caused by the axis group being placed `axis_offset` pixels below `chartHeight`), `_fix_log_minor_ticks()` (corrects integer-rounded SVG positions for minor ticks on non-linear axes — both log-scale and power-scale, on both x and y), `_fix_superscript_labels()` (corrects misaligned Unicode superscript digits in scientific/power notation labels by replacing exponents with `<tspan dy>` elements), and `_simplify_svg()` (flattens redundant `<g>` wrappers for Illustrator compatibility). `_fix_log_minor_ticks` is called after `_fix_tick_alignment`, and `_fix_superscript_labels` is called after `_simplify_svg` in `save()`.
+
+- **`dysonsphere/layers.py`** — Composite chart constructors: `mark_violin()` (KDE + embedded boxplot), `mark_strip()` (jittered/beeswarm scatter + median tick + optional mean±error bars), `add_rule()` (horizontal / vertical reference lines, `axis="y"` / `"x"`), `add_text()` (text annotations at data or pixel coordinates, with 9-position presets), `add_shade()` (background `mark_rect` shading layer). These return `alt.Chart` or `alt.LayerChart` objects for composition with `+`.
+
+- **`dysonsphere/multilabel.py`** — Condition table compositor: `add_multilabel()` attaches an annotation table below a chart by stripping its x-axis labels and vconcat'ing with a `_multilabel_layer()` annotation. Accepts `alt.Chart | alt.LayerChart` (e.g. a strip+boxplot layer). `_multilabel_layer()` is the private implementation. Returns `alt.VConcatChart`. Split from `layers.py` because the multilabel system is a chart compositor (not a composable layer), and has grown sophisticated enough to justify its own module.
+
+- **`dysonsphere/nonlinear.py`** — Minor tick constructors for non-linear axes: `add_log_ticks()` (unlabeled minor ticks for log-scale axes, base 10 or arbitrary integer base) and `add_pow_ticks()` (unlabeled minor ticks for power/sqrt-scale axes, arbitrary exponent). Private helpers: `_log_minor_layer()` and `_derive_exp()` for `add_log_ticks()`; `_pow_minor_layer()` for `add_pow_ticks()`. Both public functions use the invisible `mark_point(opacity=0)` + independent-axis trick.
+
+- **`dysonsphere/statistics.py`** — Statistical annotation constructors: `add_pvalue()` (p-value brackets for one or more pairs, with auto-stacking) and its internal helpers `_pvalue_layer()`, `_format_pvalue()`, `_format_asterisks()`. Split from `layers.py` to keep statistical logic in a separate module.
+
+- **`dysonsphere/transforms.py`** — Pure data transforms that add columns to a Polars DataFrame: `add_jitter()` (Gaussian x-offsets) and `add_beeswarm()` (analytic collision-avoiding x-offsets). Output columns are then passed to Altair's `xOffset` encoding. `add_jitter()` `spread` defaults to `min(chartWidth, chartHeight) / 50` (2.0 at 100×100), matching the `markSize` scaling pattern.
+
+- **`dysonsphere/utils.py`** — Shared utilities. Contains `ensure_polars(df)`, which accepts a `polars.DataFrame` or `pandas.DataFrame` and always returns a `polars.DataFrame`. Called at the entry point of every public DataFrame-accepting function (`mark_violin`, `mark_strip`, `add_pvalue`, `add_jitter`, `add_beeswarm`). Pandas is detected via `type(df).__module__.startswith("pandas")` to avoid a hard import; conversion uses `pl.from_pandas()`, which requires `pyarrow` for object-dtype (string) columns. Also contains `count_n(df, xCol, categories)`, which returns a `list[int]` of per-category row counts in `categories` order; calls `ensure_polars` internally so it accepts both DataFrame types.
+
+- **`dysonsphere/__init__.py`** — Star-imports all seven modules; everything public is available directly on the `dysonsphere` namespace.
+
+### Key design points
+
+**Palette construction:** Custom palettes are built in [Oklab](https://bottosson.github.io/posts/oklab/) for perceptual uniformity. `scripts/build/print_palettes.py` contains the four recipes (single-hue, multi-hue, diverging, chroma-scaling) and arc-length resampling logic. Running it prints new hex literals to stdout; you then paste them into `palettes.py` manually.
+
+**Theme registration:** `theme()` takes `style: str | None = None` and `**kwargs`. All built-in defaults live in `_BUILTIN_DEFAULTS`; built-in named presets (`"notebook"`, `"presentation"`) live in `_BUILTIN_STYLES` — both dicts in `theme.py`. Merge order (ascending priority): `_BUILTIN_DEFAULTS` → `[default]` from config file(s) → `_BUILTIN_STYLES[style]` → `[style]` from config file(s) → explicit kwargs. Built-in presets work without any config file; the config file only customises them. `create_config(directory=None, *, persist=False)` scaffolds a `dysonsphere.toml` with all built-in presets at their defaults plus an empty `[my_style]` placeholder; `persist=True` writes to the platform user config dir (`_user_config_dir()`: XDG on macOS/Linux, `%APPDATA%` on Windows) instead of cwd. `_config_paths()` returns config file paths in ascending priority order: `$XDG_CONFIG_HOME/dysonsphere/dysonsphere.toml` (user-wide) then `dysonsphere.toml` found by `_find_project_config()`, which walks up from `Path.cwd()` to the filesystem root (git-style) and returns the first match. `_load_style_overrides(style)` raises `ValueError` for unknown TOML keys, or if the style is not in `_BUILTIN_STYLES` and not found in any config file. `_load_custom_palettes()` reads `[palettes]` sections from config files and returns a `dict[str, list[str]]`; each value must be a non-empty list of strings. On each `theme()` call, `colors` is restored to `_ORIGINAL_COLORS` (snapshot at import time) then updated with custom palettes, so they reset cleanly when no config file is present. `alt.theme.options` is set via `{**p, "tickWidth": p["axisWidth"]}` in one shot. Calling `theme()` again replaces the theme entirely. `dashedGrid=False` controls whether axis grid lines are dashed (uses the `dashedWidth` pattern); grid lines are independent of `dashedRule` which only affects `mark_rule` marks.
+
+**Chart title config:** The `"title"` block in `_dysonsphere_theme()` sets `"anchor": "middle"` and `"frame": "group"` explicitly. Both are required: `anchor` alone is not picked up by Vega-Lite when the title is a plain string (e.g. `.properties(title="...")`); `frame="group"` ensures centering is relative to the chart's layout group (view + axis space) rather than the rendered mark bounds. Together they make `.properties(title="...")` behave identically to `alt.TitleParams(text="...", anchor="middle", frame="group")`.
+
+**`cornerRadius` parameter:** `cornerRadius: float | bool = False` in `_BUILTIN_DEFAULTS`. `False` → omitted (no rounding). `True` → resolved to `min(chartWidth, chartHeight) / 100` at theme-call time (1 px at the default 100×100 chart). Explicit `float` → used as-is. Applied as `config.rect.cornerRadius`, `config.boxplot.box.cornerRadius`, and `config.arc.cornerRadius` (all corners on each); and `config.bar.cornerRadiusEnd` (tip only, not `cornerRadius`). `mark_square` was considered but excluded — it renders as an SVG path symbol, not a `<rect>`, so `cornerRadius` has no effect on it. The `if opts["cornerRadius"]` guard omits the key entirely when falsy so Vega-Lite's own defaults are not overridden.
+
+**Arc mark defaults:** The `"arc"` config block sets two hardcoded values not exposed as `theme()` parameters. `innerRadius = min(chartWidth, chartHeight) / 4` makes all arcs donuts by default (25px at 100×100). `padAngle = 0.03` (radians) adds a uniform gap between slices. Both are always present; override per-chart via `mark_arc(innerRadius=0, padAngle=0)` if a full pie is needed.
+
+**Axis element toggles:** `xAxis` / `yAxis` are toggles — setting either to `False` hides the axis domain and ticks but not labels. `xDomain` and `xTicks` (and their `y` counterparts) are ANDed with `xAxis` in `_dysonsphere_theme()`; `xLabels` / `yLabels` are independent and not gated by `xAxis` / `yAxis`. For `ticks`, the global `ticks` parameter is additionally ANDed in. This lets you e.g. hide only tick marks (`xTicks=False`) or only labels (`xLabels=False`) while keeping the domain line.
+
+**Label angle parameters:** `xLabelAngle` (default `0`) and `yLabelAngle` (default `0`) replace the old `angledX`/`verticalY` booleans. Both accept any float in degrees; `labelAlign` is auto-derived from the sign: for `axisX`, negative → `"right"`, positive → `"left"`, zero → `"center"`; for `axisY`, non-zero → `"center"`, zero → `"right"`. Values are wrapped with `% 360` before being passed to Vega-Lite. Both `mark_violin` and `mark_strip` expose their own `xLabelAngle: float | None` parameter that reads from `alt.theme.options["xLabelAngle"]` when `None`.
+
+**Axis title parameters:** Both `mark_violin` and `mark_strip` accept `yTitle: str | None = _UNSET` (defaults to `yCol`) and `xTitle: str | None = _UNSET` (defaults to `xCol`). These are forwarded to the `alt.X`/`alt.Y` `title=` argument. The `_UNSET` sentinel distinguishes "user explicitly passed `None`" from "user did not pass anything" (the latter uses the column name as the title). `mark_strip` accepts `markSize` and `markOpacity` (renamed from `pointSize`/`pointOpacity`); both fall back to `markSize` and `markFillOpacity` from the theme when `None`.
+
+**`errorbar` config in `_dysonsphere_theme()`:** The `"errorbar"` block sets rule and tick properties independently of the global `"rule"` config. `"thickness": opts["markStrokeWidth"] * 2` controls the stem stroke width; `"rule": {"strokeDash": [0, 0], "strokeWidth": opts["markStrokeWidth"] * 2}` explicitly overrides the global rule config (which defaults to `axisWidth`) so stem and caps match. Tick caps use `"thickness": opts["markStrokeWidth"] * 2` and `"cornerRadius": opts["markStrokeWidth"]` (half the cap height) for rounded ends. `strokeDash` is hardcoded `[0, 0]` — errorbars do not inherit `dashedRule` because dashed error bars are almost never desired.
+
+**Boxplot tick cap rounding:** The `"boxplot"."ticks"` block also sets `"cornerRadius": opts["markStrokeWidth"]`. Unlike errorbar ticks (where `thickness = markStrokeWidth * 2` makes the radius exactly half the cap height), boxplot tick caps use `thickness = markStrokeWidth`, so the radius equals the full thickness — a more aggressively curved end. Both use rect marks; `strokeCap` has no effect on filled rects, `cornerRadius` is the correct property.
+
+**`axisRight` / `axisTop` config:** Both are fully specified in `_dysonsphere_theme()` to mirror their counterparts (`axisY` / `axisX`) with two modifications: `labelAngle` is negated (`(-angle) % 360`) to maintain visual symmetry on the opposite edge, and `labelAlign` is flipped accordingly (`axisRight`: `"left"` at zero instead of `"right"`; `axisTop`: negative angle → `"left"` instead of `"right"`). All other properties (`domain`, `labels`, `ticks`, `translate`) are inherited directly from the same toggles as the primary axis, so secondary axes obey `xAxis`/`yAxis` visibility settings.
+
+**Dark mode:** `save()` temporarily toggles `darkmode` in `alt.theme.options` when rendering the dark variant, then restores the original value. Pass `background=["light"]` or `background=["dark"]` to render only one variant.
+
+**`saveMetadata`:** `saveMetadata=True` (default). When `True`, appends a generation info string (newline-separated from `description` if also set): `"Generated with <script> by <user> using Python <ver> on <YYYYMMDD> at <HH:MM:SS> UTC using altair <ver> / dysonsphere <ver>."`. Script name is `Path(sys.argv[0]).name`; in Jupyter (`ZMQInteractiveShell`) it becomes `"<jupyter-notebook>"`. Username via `getpass.getuser()`, falls back to `"unknown_user"`. Time is UTC. Vega-Lite's SVG renderer does not emit a `<desc>` element itself, so `save()` injects one via SVG post-processing (`re.sub` after `_simplify_svg`), with XML-escaped text via `html.escape()`. The identical text lands in the SVG `<desc>` element, the Vega-Lite JSON spec `"description"` key, and a PNG `iTXt` chunk with keyword `"Description"` — injected by `_inject_png_metadata()` after `vlc.svg_to_png()`. Setting `description=` alone (without `saveMetadata`) also injects `<desc>` into the SVG and the `iTXt` chunk into the PNG.
+
+**`add_rule()` design:** Lives in `layers.py` (`_rule_mark_kwargs` private helper). Unified horizontal/vertical reference line function; `axis="y"` (default) draws horizontal lines at fixed y value(s), `axis="x"` draws vertical lines at fixed x value(s). Builds a `mark_rule` DataFrame layer and an optional `mark_text` label layer, returned as a bare layer (or `alt.layer(rule, text)` when `label` is set) for the caller to compose with `+`. The `_rule_mark_kwargs()` private helper builds the `mark_rule` property dict (color, strokeWidth, strokeDash, opacity). `strokeDash=None` (default) does not pass `strokeDash` to the mark so the theme's `dashedRule` config applies automatically; `strokeDash=False` passes `[0, 0]` to force solid; `strokeDash=True` reads `dashedWidth` from `alt.theme.options`. For labeled lines: `axis="y"` places text at `x=alt.value(0)` (left edge) or `alt.value(chartWidth)` (right), using `chartWidth` from `alt.theme.options`; `axis="x"` places text at `y=alt.value(0)` (top) or `alt.value(chartHeight)` (bottom). The encoding field uses `title=None` so it does not clobber the main chart's axis title. Scale sharing is implicit — Altair layers share quantitative scales by default, placing reference lines at the correct data coordinates on the main chart's scale.
+
+**`add_rule()` label parameters:** `labelAlign` controls where *along* the line the label is anchored; `labelPosition` controls which *side* of the line it sits on. These drive different Vega-Lite properties depending on axis:
+
+- `axis="y"` (horizontal rule): `labelAlign` is `"left"/"center"/"right"` (default `"left"`) — maps directly to Vega-Lite `align` and the x anchor (`alt.value(0)`, `alt.value(chartWidth/2)`, `alt.value(chartWidth)`). `labelPosition` is `"top"/"bottom"` (default `"top"`) — drives `dy` direction and Vega-Lite `baseline`.
+- `axis="x"` (vertical rule): `labelAlign` is `"top"/"center"/"bottom"` (default `"top"`) — maps to the y anchor and Vega-Lite `baseline`. `labelPosition` is `"right"/"left"` (default `"right"`) — drives `dx` direction and Vega-Lite `align`.
+
+`labelOffsetX` and `labelOffsetY` are additive pixel offsets applied directly to the text mark (`dx` and `dy`). Both default to `0` (flush). The perpendicular gap between label and line is a hardcoded `±3` (`base_dy` for horizontal, `base_dx` for vertical) derived from `labelPosition`; `labelOffsetX`/`labelOffsetY` add on top of that.
+
+**`add_text()` design:** Lives in `layers.py` (`_is_alt_value` private helper, `_TEXT_PRESETS` dict). Places one or more text annotations at arbitrary coordinates; returns a bare `alt.Chart` the caller composes with `+`. Three coordinate modes auto-detected from Python type: `float`/`int` → `:Q` encoding (shares the main chart's quantitative scale); `str` → `:N` encoding (shares the band scale, centering on the named category); `dict{"value": n}` (i.e. `alt.value(n)`) → pixel passthrough via `alt.value()`, independent of data scales. `_is_alt_value(v)` helper detects the third form as `isinstance(v, dict) and "value" in v`.
+
+**`add_text()` position presets:** `_TEXT_PRESETS` dict maps 9 camelCase names (`"topLeft"`, `"topCenter"`, `"topRight"`, `"middleLeft"`, `"middleCenter"`, `"middleRight"`, `"bottomLeft"`, `"bottomCenter"`, `"bottomRight"`) to `{x_frac, y_frac, align, baseline}`. Resolved at call time from `chartWidth`/`chartHeight` in `alt.theme.options`. When `closed=True` or `axisOffset=0` in the active theme, a fixed 1 px inset (`_pad`) is applied to edge positions (x_frac=0 or 1, y_frac=0 or 1) so text clears the border. Center positions (fractions=0.5) are unaffected. Explicit `x`/`y`/`align`/`baseline` arguments override the preset for that parameter. `offsetX`/`offsetY` are additive pixel nudges passed as `dx`/`dy` to the Vega-Lite mark (positive = right/down); applied on top of any inset.
+
+**`add_text()` baseline defaults:** Default `baseline="middle"` when no preset is used (best near symbols/rules). Presets use type-appropriate baselines: `"top"` for top-row positions (text hangs down from anchor), `"middle"` for middle row, `"alphabetic"` for bottom-row positions (reading baseline sits on anchor).
+
+**`add_text()` demo:** `scripts/plots/text.py`. Build script: `scripts/build/build_text_example.py` → `docs/text_example_light.png`.
+
+**`mark_violin()` x-positioning:** The violin shape is built from precomputed absolute `x:Q` coordinates rather than `xOffset`. This avoids Vega-Lite merging the violin's xOffset domain with any other chart's xOffset domain in hconcat (which would squish the violin). The band center for category index `i` uses the **Case pi** formula (matching `mark_boxplot`'s actual band scale, which applies `paddingInner = paddingOuter = band_padding`): `step = chartWidth / (n + band_padding)`, `x_center = step * (0.5 + band_padding/2 + i)`. This differs from the `mark_strip`/xOffset formula (Case 0: `step = chartWidth / (n + 2*band_padding)`, `center = step*(band_padding + 0.5 + i)`) — both `paddingInner` terms cancel differently because boxplot respects `bandPaddingInner` while mark_circle with xOffset effectively uses paddingInner=0. The violin's `x:Q` encoding uses `axis=None` (not `orient="top"`) so Vega allocates no layout space for it; without this, the hidden axis would reserve ~chart_height of space above the violin panel, pushing the chart title down and misaligning hconcat titles. The layer uses `resolve_axis(x="independent")` so the boxplot's nominal x:N axis remains at the bottom.
+
+**Layers vs. marks:** `mark_violin()` and `mark_strip()` call `alt.layer()` internally to combine multiple Altair chart objects. `add_pvalue()` returns a bare layer (or stacked layers for multiple pairs) that the caller adds to their chart with `+`. Its bracket shape is controlled by `bracketStyle` (`"line"` or `"bracket"`); its label format by `labelStyle` (`"p"` for `P = 0.012` / `P < 0.001`, or `"asterisks"` for `*` / `**` / `***` / `ns`). `notation=` controls the number format when `labelStyle="p"`: `None` (default, preserves current behavior) / `"scientific"` (`P = 1.23×10⁻⁵`) / `"e"` (`P = 1.23e-05`) / `"power"` (`P ≈ 10⁻⁵`, rounds to nearest power — values within the same decade get the same label). `"si"` raises `ValueError`. `decimals=` (default `3`) controls decimal places in `P = 0.xxx` format and the threshold (`10^(-decimals)`) when `notation=None`; controls mantissa decimal places for `"scientific"`/`"e"`; ignored for `"power"`.
+
+**p-value label vertical offset:** `_pvalue_layer` (private) uses `dy = ±4` for alphanumeric labels (`"P = ..."`, `"ns"`) and `dy = ±2` for pure asterisk glyphs (`*`, `**`, `***`). The `tickHeight` parameter defaults to `yStep * 0.25` so bracket end ticks scale automatically with bracket spacing.
+
+**p-value `yPad` auto-scaling:** `yPad` defaults to `None` and is computed as `target_px * y_range / chartHeight`, giving a fixed ~8 px visual gap for `bracketStyle="line"` and ~10 px for `bracketStyle="bracket"` regardless of chart height. `yStep = yPad * 2` and `tickHeight = yStep * 0.25` cascade from this, so all stacking distances scale consistently. Explicit `yPad` overrides the auto value.
+
+**p-value `fontSize` default:** flat `6`, independent of the theme `fontSize`.
+
+**p-value `reverse` + negative `yStep` gotcha:** To place brackets below the data, set `yStart = data_min - yPad` and `yStep` to a negative value so levels stack downward. But `tickHeight` auto-computes as `yStep * 0.25`, which goes negative and makes ticks point away from the data. Always pass `tickHeight` explicitly as a positive value in this case.
+
+**Naming convention:** All public function parameters use camelCase (e.g. `xCol`, `yCol`, `bracketStyle`, `labelStyle`, `yPad`, `yStep`) to match Altair and Vega-Lite conventions. Private/internal functions (prefixed `_`) retain snake_case (e.g. `_pvalue_layer` uses `x_col`, `y_col`, `bracket_style` internally).
+
+**`add_shade()` modes:** Two modes selected by which parameters are provided.
+
+*Band mode* (`categories` provided, `positions` omitted): shades every band on the x-axis. Color assignment: `palette[(i // repeat) % len(palette)]`. Consecutive same-color runs are merged into a single wider rect to eliminate the sub-pixel antialiasing seam that vl-convert PNG rasterization produces at coincident edges between adjacent same-color rects (src-over compositing partial coverage). Always operates on `axis='x'`.
+
+*Positions mode* (`positions` provided): shades explicit coordinate ranges. Three sub-cases based on type:
+- **String tuples** `(start, end)` — nominal axis, resolved to pixel coordinates via band scale formula so the shade layer doesn't participate in scale merging. Requires `categories`.
+- **Numeric tuples** `(start, end)` — quantitative axis, encoded as `x:Q`/`x2:Q` or `y:Q`/`y2:Q` fields that auto-share the main chart's scale.
+- **Nested tuples** `((x_start, x_end), (y_start, y_end))` with `axis='both'` — draws intersection rects spanning both axes simultaneously. Each half is resolved independently using the same string vs. numeric logic, so mixed types (e.g. nominal x + quantitative y) work in the same rect. Data fields are only created when Q encoding is needed; pure-pixel rects use `dummy_df`.
+
+**`add_shade()` parameters:**
+- `palette` — list of hex colors to cycle through in light mode. Defaults to `colors["greys"]` when `None`. In dark mode this parameter is always ignored — `colors["greys"][-nShades:]` is used regardless. Resolved at call time from `alt.theme.options["darkmode"]` — callers must wrap chart construction in a callable passed to `ds.save()` for correct darkmode rendering.
+- `nShades` — number of colors to use. Light mode: `palette[:nShades]`. Dark mode: `colors["greys"][-nShades:]`. Default `2`.
+- `repeat` — number of consecutive ticks covered by each rect before advancing to the next color (band mode only). Default `1`.
+- `opacity` — fill opacity. Default `1.0`.
+- `stroke` — enable rect border. `False` (default) → no stroke. `True` → axis-style stroke: color is black/white (darkmode-aware), width is `axisWidth`.
+- `strokeWidth` — explicit border width override in pixels. Only takes effect when `stroke=True`; overrides `axisWidth`. `None` (default) uses `axisWidth`.
+- `strokeDash` — dash pattern for the rect border. `None` (default) → solid. `True` → inherit `dashedWidth` from the active theme. A list (e.g. `[4, 2]`) → use that pattern directly.
+- `flush` — extend outermost rects to the axis domain edge. `None` (default) inherits from `theme(closed=...)`.
+- `axis` — `'x'` (default), `'y'`, or `'both'`. Ignored in band mode (always `'x'`).
+
+**`add_shade()` band scale formula:** `step = chartWidth / (n + 2 * bandPadding)`. Band `i` spans `[step*(bandPadding+i), step*(bandPadding+i+1)]`. This uses `bandPadding` as `paddingOuter` only — `bandPaddingInner` only affects bar mark widths, NOT band boundary positions. With flush=False the outer gap on each side is `bandPadding * step`.
+
+**`log_label_expr(base=10, notation="power")` in `nonlinear.py`:** Returns a Vega `labelExpr` string for typeset log-scale axis labels. Four notations: `"power"` (default) → `10⁴`, `2²⁰` (any base); `"scientific"` → `1×10⁴` (base=10 only, assumes exact-power ticks so mantissa is always 1); `"e"` → `1e+4` (base=10 only, uses `format(datum.value, '.0e')`); `"si"` → `10k`, `1M` (base=10 only, uses `format(datum.value, '~s')`). All notations except `"power"` raise `ValueError` for non-base-10. Power and scientific support exponents up to ±99 via `_SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹"` — single-digit uses `_SUP[exp]`, two-digit uses `_SUP[floor(abs/10)] + _SUP[abs%10]`. Vega has no variable binding so `abs(round(log(datum.value) / log(base)))` is written out in full wherever needed. Callers pass the return value to `alt.Axis(labelExpr=...)` — independent of `add_log_ticks()`.
+
+**`add_log_ticks()` design:** Lives in `nonlinear.py`. Wraps the caller's chart in `alt.layer(chart, minor_layer)` with `resolve_axis(y="independent")` or `resolve_axis(x="independent")`. The minor layer is an invisible `mark_point(opacity=0)` carrying a second axis with `ticks=True`, `labels=False`, `domain=False`, `grid=False`. Forcing `domain=[base**exp_min, base**exp_max]` on the minor layer's scale is critical — without it, Vega auto-fits the scale to the data extent, causing partial intervals at the edges with fewer visible minor ticks. For `base=10`: `minor_values = [m * 10**e for e in range(exp_min, exp_max) for m in range(2, 10)]`. For other bases: `minor_values = [base**(e + k/n_divs) for e in range(exp_min, exp_max) for k in range(1, n_divs)]` where `n_divs = nMinor + 1`. `_derive_exp()` uses `math.log10` for base 10 and `math.log(x, base)` otherwise. `axis='both'` uses `xField`/`yField` instead of `field` and resolves both axes independently in a single layer call. `minorTickSize` defaults to `None` and is resolved at call time as `alt.theme.options.get("tickSize", 3) / 2` — so minor ticks automatically scale to half the active theme's tick length.
+
+**`add_pow_ticks()` design:** Lives in `nonlinear.py`. Uses the same invisible-layer technique as `add_log_ticks()`. `majorValues` is required (cannot be auto-derived) and must match the `values=` passed to the main chart's `alt.Axis` — the minor layer uses them to infer interval boundaries and to set the independent scale domain via `domain=[min(majorValues), max(majorValues)]`. Minor tick `k` of `nMinor` between major ticks `a` and `b` is placed at `(a**exp + k/n_divs * (b**exp - a**exp))**(1/exp)` where `n_divs = nMinor + 1`. This interpolates linearly in power-transformed space, giving equal visual spacing. `axis='both'` requires `xField`, `yField`, `xMajorValues`, and `yMajorValues`. `minorTickSize` defaults to `None` and resolves at call time as `alt.theme.options.get("tickSize", 3) / 2`, matching the same convention as `add_log_ticks()`.
+
+**`_fix_log_minor_ticks()` in export.py:** SVG post-processor that corrects integer-rounded minor tick positions for non-linear axes. Vega rounds all SVG tick transforms to integers; when chart dimension is not divisible by the number of intervals, each interval gets a different pixel span, making minor tick spacing visually inconsistent at high DPI. Runs after `_fix_tick_alignment()` in `save()`. Handles both log-scale ticks (base-10 non-uniform 2×–9× pattern) and power-scale ticks (uniform equal-visual-space), auto-detected by gap-uniformity test.
+
+*Y-axis detection:* `translate(0,N)` lines with `x2 < 0` (ticks extending left). Position = N.
+*X-axis detection:* `translate(N,0)` lines with `0 < y2 < 20`. The `< 20` upper bound excludes `mark_rule` elements whose `y2` equals the full chart height. **`translate(0,0)` gotcha:** the leftmost x-axis tick has this exact transform, which also matches the y-axis regex `translate(0,...)`. Both pattern checks are therefore independent `if` branches (not `if/elif`) so that when the y-axis check enters but fails `x2 < 0`, the x-axis check still runs on the same element.
+
+**Per-panel grouping:** Tick lines are collected by walking the SVG tree and accumulating `(cx, cy)` from all ancestor `<g>` transforms. Each unique `(cx, cy)` context is a separate panel coordinate space. Ticks from the same `(cx, cy)` group are processed together; ticks from different groups never mix. This prevents cross-panel contamination in `hconcat` (panels differ in `cx`) and `vconcat` (panels differ in `cy`): without this, major ticks from a linear axis in one panel would corrupt interval detection for a log axis in another.
+
+**Strict upper interval bound:** the interval check is `lo - 1 <= pos <= hi` (not `hi + 1`). Minor ticks are strictly between major ticks so Vega's integer rounding can only move them downward, never past `hi`. A `hi + 1` tolerance caused the 9× tick (1 px above the next major) to match the wrong interval and be displaced.
+
+Sizes are split into major (largest) and minor (smallest) within each group. Gap-uniformity test on the first interval distinguishes base-10 (non-uniform: `max_gap > 2 × min_gap`) from equal-log-space (uniform: all gaps equal). Correction formulas:
+
+- **Y-axis, base-10:** `y_exact = hi - log10(m) × span`, `mval = round(10^(1−rel))` where `rel = (y_int − y_top) / span`
+- **Y-axis, uniform:** `y_exact = hi - (k/n_divs) × span`, `k = round((1−rel) × n_divs)`
+- **X-axis, base-10:** `x_exact = lo + log10(m) × span`, `mval = round(10^rel)` (note: `10^rel`, NOT `10^(1−rel)`)
+- **X-axis, uniform:** `x_exact = lo + (k/n_divs) × span`, `k = round(rel × n_divs)` (note: `rel`, NOT `1−rel`)
+
+The sign flip between x and y formulas is because y increases downward (high data value = low y = `y_top`) while x increases rightward (high data value = high x = `hi`).
+
+**`_fix_superscript_labels()` in export.py:** SVG post-processor that fixes misaligned Unicode superscript digits in scientific/power notation p-value labels (e.g. `10⁻¹⁴`). Root cause: Unicode superscript 1–3 (`¹ ² ³`, U+00B9/B2/B3, Latin-1 Supplement) and 0/4–9 (`⁰ ⁴–⁹`, U+2070/2074–2079, Superscripts block) live in different Unicode blocks with inconsistent vertical metrics in many fonts, causing visible misalignment when digits from both blocks appear in the same exponent. The fix: walk `<text>` and `<tspan>` elements via ElementTree (not raw regex, to avoid matching attribute values), find text matching `([×≈]\s*10)([⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+)`, replace the exponent with a `<tspan dy="-2.5" font-size="4">` child element using plain ASCII digits and `−` (U+2212). Tuned for p-value label `fontSize=6` (exponent 4px, shift 2.5px). Called after `_simplify_svg` in `save()` and from the pvalue build script's manual pipeline. Must operate on the SVG file path (not the SVG string) so that attribute values — which Vega adds to marks as `aria-label` and `title` attributes containing the same label text — are never modified.
+
+**Grid annotation alignment gotchas:** `_multilabel_layer()` suppresses the y-axis and renders row labels as explicit `mark_text` marks (not axis labels) because Vega-Lite's axis rendering pipeline doesn't guarantee pixel-perfect alignment with `mark_text` even when both use `baseline="middle"`. `bandPosition=0.5` is set explicitly on the shared `y_enc` because per-mark defaults vary across mark types. `align="center"` is required on all `mark_text` content marks — without it, vertical band placement drifts in some Vega-Lite versions. The `strokeDash=[0, 0]` on the connecting rule overrides the theme's `dashedRule=True` default. The `orientation` parameter (`"vertical"` default, `"horizontal"` for legacy behavior) controls the direction of connecting lines. **Vertical:** uses `mark_line` + `detail="__line_id:N"` (two rows per segment in `line_rows`, one per endpoint) at fixed `x` — NOT `mark_rule` + `y2`, because `y2` with a different field name pollutes the shared ordinal y scale and corrupts `paddingInner`, shifting row spacing. **Horizontal:** uses `mark_rule` + `x`/`x2` encoding at fixed `y`. **`domain=row_order`** is set explicitly on the y scale (`alt.Scale(domain=row_order)`) to prevent Vega-Lite's shared-scale domain union from reordering rows when connecting lines are present. **Mixed styles:** `rowStyles: dict[str, str] | list[str] | None` overrides `style` per row; accepts a dict mapping row labels to styles, or a list of styles in `row_order`; non-bool values always force `"text"` per row regardless. Style branches (plusminus, text, symbol) are now separate `alt.layer()` entries rather than early-return branches. Connecting lines are computed only over symbol-style rows; non-symbol rows between symbol rows are skipped in run detection (no error). **`rowHeight`** defaults to `10` px (flat). `_strip_x_labels` in `add_multilabel` reads `x._kwds` directly because `.axis` on `alt.X` returns a `_PropertySetter` descriptor, not the stored value. **Tick-to-annotation alignment:** Vega floors SVG axis tick transforms to integers; at 1200 PPI this magnifies the <1 px rounding into a visible gap. `_fix_tick_alignment()` in `export.py` corrects this. It processes both `mark-rule role-axis-tick` and `mark-rule role-axis-grid` groups independently. Tick lines use `translate(x,0)`; grid lines use `translate(x,-chartHeight)` with `y2=chartHeight` — the collection regex accepts any y value so both formats are matched. Each group is processed independently (not globally deduped) so that hconcat panels with different mark types (e.g. strip=Case 0, violin=Case pi) each match their own formula. It evaluates three scale formulas: **Case pi** (`mark_violin`/boxplot: `step=W/(n+bp)`), **Case 0** (xOffset/mark_strip: `step=W/(n+2*bp)`), **point scale** (`step=W/n`). When Case pi and Case 0 floor to the same integers (e.g. n=6 at W=100, bp=0.1), the function reads boxplot box mark x-centers from SVG path data (`aria-roledescription="box"`, `M x1,y L x2,y...` → center=(x1+x2)/2) and picks whichever formula's centers are closer to the actual mark positions. If no box marks are present in the ambiguous case, the fix returns early (no change). For `hconcat` charts that mix strip and violin panels, the combined unique tick set doesn't match any formula, so fix_tick returns early; ticks stay at Vega's floor'd positions (within 0.5 px of the exact center). **Grid line y-span fix:** the x-axis group is placed at `y = chartHeight + axisOffset` in the SVG (where `axisOffset = tickSize` when `axisOffset` is not explicitly set, or `0` when `closed=True`). Grid lines inside that group span `ty=-chartHeight` to `y2=chartHeight`, which misses the top `axisOffset` pixels of the chart. `_fix_tick_alignment` extends grid lines to `ty=-(chartHeight + axisOffset)` / `y2=chartHeight + axisOffset` when `axis_offset > 0`. `save()` computes this as `0 if closed else (axisOffset or tickSize)`. Any script that builds a grid-labels chart must call `ds.save()` (not `chart.save()`) to trigger the fix; pass a callable when dot colours depend on darkmode.
+
+**Grid annotation darkmode:** Dot colours in `_multilabel_layer(style="symbol")` are resolved from `alt.theme.options` at call time. In dark mode: `positive_color="white"`, `negative_fill=colors["greys"][11]`, `negative_stroke="white"`. Pass a callable to `ds.save()` so the chart rebuilds after each darkmode toggle: `ds.save(lambda: ds.add_multilabel(..., style="symbol"), "plot")`.
+
+**`add_multilabel` spans:** `span: dict[str | None, list[str]] | list[dict[str | None, list[str]]] | None` groups contiguous x-axis categories under a shared rule or bracket. Keys are span labels (`""` or `None` for no label); values are lists of categories. Use a list of single-entry dicts when multiple unlabeled spans are needed (plain dict collapses duplicate `None` keys). The span extends from `min(index)` to `max(index)` of the listed categories. All marks use `alt.value()` for pixel coordinates — no `:Q` scale is added to the layer, avoiding scale merging conflicts with the annotation's `:N` x scale. `spanBracketStyle="line"` (default) draws a plain horizontal rule; `"bracket"` adds vertical end ticks. `spanLabelPosition="bottom"` (default) places the label below the rule; `"top"` places it above. `spanBracketReverse=True` (default) points ticks toward the annotation rows (no height added); `False` extends ticks below the rule (adds height). `spanTickHeight` defaults to `alt.theme.options.get("tickSize", 3)`. `spanGap` defaults to `rowHeight × 0.3`. X positions: `step = chartWidth / (n + 2 * bandPadding)`, `x1 = step * (bp + 0.5 + i_min) - step * 0.30`, `x2 = step * (bp + 0.5 + i_max) + step * 0.30` — centered on band centers with ±0.30-step extension. Rule and tick colors are darkmode-aware; `strokeDash=[0, 0]` overrides `dashedRule`. **`defer_cat_label`:** when `categoryLabel=True`, `categoryLabelPosition="bottom"`, and `span` is present, the category label row is deferred to below the spans so the visual order is rows → spans → category labels.
+
+**`add_multilabel` sample size row:** `showSampleSize=True` injects a per-category count row using `count_n(df, xCol, categories)` from `utils.py`. The row is always forced to `style="text"` via an explicit `rowStyles` override — belt-and-suspenders on top of `_row_style`'s non-bool auto-detection. When `rowStyles` is a list, it is converted to a dict using the original `groups` keys *before* the n-row is inserted, so list indices remain correct. `sampleSizeIndex` sets insertion position using `list.insert()` semantics (default `0` = first; `len(groups)` = last; `-1` = second-to-last). `sampleSizeLabel` sets the row label (default `"n ="`). `groups` defaults to `{}` and `categories` defaults to `None`, so calling `add_multilabel(chart, categories=CATEGORIES, showSampleSize=True, df=df, xCol="group")` is valid with no explicit `groups`. These parameters are on `add_multilabel` only, not `_multilabel_layer`.
+
+**`add_multilabel` category labels:** `categoryLabel=True` renders x-axis category names as angled text in a dedicated row via a separate `mark_text` layer using `alt.value(label_y)` absolute positioning (not part of the band scale). `categoryLabelPosition="top"` or `"bottom"` (default) places the row above or below all data rows — intermediate positions are not supported. `categoryLabelAngle` (default `-45`) controls rotation; Vega-Lite requires angles in [0, 360], so the value is passed as `categoryLabelAngle % 360`. `align` is `"center"` when `categoryLabelAngle % 360 == 0`, `"right"` otherwise. `baseline="middle"` is used universally (not `"top"`) so that the text is correctly centered for all angles including `−90°`. The anchor y position is `label_y_offset = fontSize/2 × |cos(angle)|` for the top case (shifts anchor down to prevent upward clipping), and `n*rowHeight + label_y_offset + extra` for the bottom case where `extra = max(0, categoryLabelHeight − tight_height)` shifts the anchor further into the label row when `categoryLabelHeight` is larger than the tight-fit value. `categoryLabelHeight` auto-computes as `ceil(fontSize × 0.6 × max_len × |sin(angle)| + fontSize × |cos(angle)|)` — the rotated bounding box of the longest label. The band scale is shifted via `alt.Scale(range=[categoryLabelHeight, n*rowHeight + categoryLabelHeight])` for `"top"` so data rows start below the label row. The category label row lives outside the band scale; nothing (including the n= row) can be placed between data rows and category labels at the far end.
+
+**Grid annotation hconcat label overflow:** Row labels are positioned outside the declared `width` via `alt.value(x)` and are not clipped or auto-spaced by Vega-Lite's layout engine. In `hconcat`, labels from one panel can bleed into adjacent panels; add explicit `spacing` or outer padding to compensate.
+
+### Release
+
+**In order:**
+
+1. `uv run ruff check dysonsphere/ tests/ scripts/` — fix any lint errors
+2. `uv run ruff format dysonsphere/ tests/ scripts/` — format
+3. `uv run ty check dysonsphere/ tests/ scripts/` — all type checks must pass
+4. `uv run pytest tests/` — all tests must pass
+5. Bump version in `pyproject.toml`
+6. `uv lock` — updates `uv.lock` to reflect the new version
+7. `uv run python scripts/build_all.py` — rebuild all docs assets (gallery, examples, swatches)
+8. Commit everything
+9. `git push origin main` — triggers GitHub Pages deploy from `docs/`
+10. `git tag vX.Y.Z && git push origin vX.Y.Z` — triggers PyPI publish via OIDC
+11. Draft a new release on GitHub: go to Releases → Draft a new release, select the tag, paste release notes, publish
+
+GitHub Pages deploys from `docs/` on every push to `main`. PyPI publishes on every `v*` tag push via `publish.yml`.
