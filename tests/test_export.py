@@ -140,6 +140,26 @@ class TestSave:
         save(layer, str(tmp_path / "out"), background=["light"])
         assert (tmp_path / "out_light.png").exists()
 
+    def test_hconcat_chart(self, tmp_path):
+        df = pl.DataFrame({"x": ["A", "B"], "y": [1.0, 2.0]})
+        panel = alt.Chart(df).mark_point().encode(x="x:N", y="y:Q")
+        hcat = alt.hconcat(panel, panel)
+        save(hcat, str(tmp_path / "out"), background=["light"])
+        assert (tmp_path / "out_light.png").exists()
+
+    def test_vconcat_chart(self, tmp_path):
+        df = pl.DataFrame({"x": ["A", "B"], "y": [1.0, 2.0]})
+        panel = alt.Chart(df).mark_point().encode(x="x:N", y="y:Q")
+        vcat = alt.vconcat(panel, panel)
+        save(vcat, str(tmp_path / "out"), background=["light"])
+        assert (tmp_path / "out_light.png").exists()
+
+    def test_facet_chart(self, tmp_path):
+        df = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0], "y": [1.0, 2.0, 3.0, 4.0], "facet": ["A", "A", "B", "B"]})
+        facet = alt.Chart(df).mark_point().encode(x="x:Q", y="y:Q").facet("facet:N")
+        save(facet, str(tmp_path / "out"), background=["light"])
+        assert (tmp_path / "out_light.png").exists()
+
     def test_callable_chart(self, tmp_path):
         df = pl.DataFrame({"x": ["A", "B"], "y": [1.0, 2.0]})
         save(

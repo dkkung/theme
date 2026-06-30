@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, cast
+from typing import Callable, Union, cast
 
 import altair as alt
 
-if TYPE_CHECKING:
-    pass
+_AltairChart = Union[
+    alt.Chart,
+    alt.LayerChart,
+    alt.FacetChart,
+    alt.VConcatChart,
+    alt.HConcatChart,
+    alt.ConcatChart,
+]
 
 
 def save(
-    chart: alt.Chart | alt.LayerChart | Callable[[], alt.Chart | alt.LayerChart],
+    chart: _AltairChart | Callable[[], _AltairChart],
     filename: str,
     ppi: int = 1200,
     description: str | None = None,
@@ -32,11 +38,12 @@ def save(
     ----------
     chart:
         The Altair chart to save, or a zero-argument callable that returns
-        one. When a callable is provided it is called fresh for each
-        light/dark variant — after ``darkmode`` has been toggled — so any
-        marks whose colours depend on ``ds.theme()`` (e.g.
-        ``add_multilabel``) are rebuilt with the correct palette each
-        time.
+        one. Accepts any Altair compound chart type: ``Chart``,
+        ``LayerChart``, ``FacetChart``, ``VConcatChart``, ``HConcatChart``,
+        or ``ConcatChart``. When a callable is provided it is called fresh
+        for each light/dark variant — after ``darkmode`` has been toggled —
+        so any marks whose colours depend on ``ds.theme()`` (e.g.
+        ``add_multilabel``) are rebuilt with the correct palette each time.
     filename:
         Extensionless path for the output files (e.g. ``"myplot"`` or
         ``"plots/myplot"``). A bare name saves to the current working
@@ -75,9 +82,8 @@ def save(
     # marks whose colours read from alt.theme.options at construction time
     # (e.g. add_multilabel dot colours) pick up the correct
     # darkmode value that was just toggled above.
-    def _resolve() -> alt.Chart | alt.LayerChart:
-        raw = chart() if callable(chart) else chart  # ty: ignore[call-top-callable]
-        c = cast(alt.Chart | alt.LayerChart, raw)
+    def _resolve() -> _AltairChart:
+        c = cast(_AltairChart, chart() if callable(chart) else chart)  # ty: ignore[call-top-callable]
         return c.properties(description=description) if description is not None else c
 
     base = Path(filename)
