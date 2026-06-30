@@ -1170,10 +1170,13 @@ def add_pvalue(
         Pixel nudges for the omnibus label, forwarded to ``add_text``.
     report:
         ``True`` prints the full descriptive + effect-size report (per-group
-        n/mean/sd/median/IQR/range, the omnibus result, and the per-pair
-        comparisons) to stdout. Default ``False``. The report is queued for the
-        export metadata regardless of this flag (when ``ds.save(...,
-        saveMetadata=True)``); it lands in the next ``ds.save()``.
+        n/mean/sd/median/IQR/range, the omnibus result, and the post-hoc
+        comparisons) to stdout. Default ``False``. For an omnibus ``test`` the
+        report lists **all** pairwise post-hoc comparisons — the full table, not
+        just the pairs you bracket (and even when ``pairs=None``). For a
+        pairwise ``test`` it lists exactly the requested ``pairs``. The report is
+        queued for the export metadata regardless of this flag (when
+        ``ds.save(..., saveMetadata=True)``); it lands in the next ``ds.save()``.
     save:
         ``True`` writes the report to ``dysonsphere_report_<timestamp>.txt`` in
         the current directory; a string writes it to that directory. Default
@@ -1289,28 +1292,49 @@ def add_pvalue(
                 )
             )
 
-    # --- post-hoc / pairwise brackets ---
+    # --- resolve comparison method (a post-hoc for omnibus, the test itself for pairwise) ---
+    idx = {c: i for i, c in enumerate(categories)}
+    method: str | None
+    if pvalues is not None:
+        method = None
+    elif is_omnibus:
+        method = postHoc if postHoc is not None else _POSTHOC_DEFAULTS[test]
+    else:
+        method = test
+    comparison_name = method
+    comparison_label = "Post-hoc" if is_omnibus else "Comparisons"
+
+    # --- report comparisons ---
+    # Omnibus reports ALL pairwise post-hoc comparisons (the full picture), even when
+    # only a subset is bracketed or none is. Pairwise reports exactly the requested pairs.
+    if is_omnibus and method is not None:
+        report_pairs = [
+            (categories[i], categories[j]) for i in range(len(categories)) for j in range(i + 1, len(categories))
+        ]
+    else:
+        report_pairs = list(pairs) if pairs else []
+
+    pval_lookup: dict = {}
+    if method is not None and report_pairs:
+        report_pvals = _bracket_pvalues(method, groups, categories, report_pairs, correction, nComparisons)
+        pval_lookup = {frozenset(p): v for p, v in zip(report_pairs, report_pvals)}
+        parametric = method in _PARAMETRIC_POSTHOC
+        paired = method == "ttest_rel"
+        for g1, g2 in report_pairs:
+            en, ev = _pair_effect(groups[idx[g1]], groups[idx[g2]], parametric=parametric, paired=paired)
+            comparisons.append(
+                {"g1": g1, "g2": g2, "pvalue": pval_lookup[frozenset((g1, g2))], "effectName": en, "effect": ev}
+            )
+
+    # --- brackets ---
     if pairs:
-        idx = {c: i for i, c in enumerate(categories)}
         if pvalues is not None:
             if len(pvalues) != len(pairs):
                 raise ValueError(f"pvalues length ({len(pvalues)}) does not match pairs length ({len(pairs)})")
             computed_pvalues = list(pvalues)
-            method: str | None = None
+            comparisons = [{"g1": g1, "g2": g2, "pvalue": p} for (g1, g2), p in zip(pairs, pvalues)]
         else:
-            method = postHoc if postHoc is not None else (_POSTHOC_DEFAULTS[test] if is_omnibus else test)
-            computed_pvalues = _bracket_pvalues(method, groups, categories, pairs, correction, nComparisons)
-
-        comparison_name = method
-        comparison_label = "Post-hoc" if is_omnibus else "Comparisons"
-        parametric = method in _PARAMETRIC_POSTHOC if method is not None else False
-        paired = method == "ttest_rel"
-        for (g1, g2), pval in zip(pairs, computed_pvalues):
-            entry: dict = {"g1": g1, "g2": g2, "pvalue": pval}
-            if method is not None:
-                en, ev = _pair_effect(groups[idx[g1]], groups[idx[g2]], parametric=parametric, paired=paired)
-                entry["effectName"], entry["effect"] = en, ev
-            comparisons.append(entry)
+            computed_pvalues = [pval_lookup[frozenset((g1, g2))] for g1, g2 in pairs]
 
         # --- y positioning ---
         if yPad is None:

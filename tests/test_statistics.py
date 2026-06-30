@@ -360,6 +360,21 @@ class TestAddPvalueOmnibus:
         # corner label + one bracket layer
         assert "ANOVA" in str(layer.to_dict())
 
+    def test_report_includes_all_comparisons_not_just_bracketed(self, multi_df):
+        # only A-C is bracketed, but the omnibus report should list all 3 pairs
+        st._REPORTS.clear()
+        add_pvalue(multi_df, "group", "value", pairs=[("A", "C")], test="anova", categories=MULTI)
+        report = st._REPORTS[0]
+        assert "A vs B" in report and "A vs C" in report and "B vs C" in report
+
+    def test_report_all_comparisons_omnibus_only(self, multi_df):
+        # no brackets at all, but the report still lists every pairwise post-hoc
+        st._REPORTS.clear()
+        add_pvalue(multi_df, "group", "value", test="kruskal", categories=MULTI)
+        report = st._REPORTS[0]
+        assert "Post-hoc (dunn)" in report
+        assert all(p in report for p in ("A vs B", "A vs C", "B vs C"))
+
     def test_report_queued(self, multi_df):
         st._REPORTS.clear()
         add_pvalue(multi_df, "group", "value", test="anova", categories=MULTI)
