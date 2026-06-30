@@ -578,6 +578,8 @@ ds.add_multilabel(
 
 `categoryLabelHeight` is auto-computed as `ceil(fontSize × 0.6 × max_len × |sin(angle)| + fontSize × |cos(angle)|)` — the rotated bounding box of the longest label. Pass an explicit value to adjust the space between the category label text and the adjacent data rows.
 
+![Multilabel example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/multilabel_example_light.png)
+
 #### Spans
 
 Pass `span=` to `add_multilabel()` to group x-axis categories under a shared rule or bracket with an optional label. The span extends from the lowest to the highest index of the listed categories, so passing only the first and last members is equivalent to listing all of them.
@@ -604,10 +606,6 @@ span=[{None: ["A", "B", "C"]}, {None: ["D", "E", "F"]}]
 The span section is always placed below all annotation rows. When `categoryLabel=True` and `categoryLabelPosition="bottom"`, the category label row is deferred to below the spans so the visual order is always: rows → spans → category labels.
 
 ![Multilabel span example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/multilabel_span_example_light.png)
-
-Span parameters are listed in the table below.
-
-![Multilabel example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/multilabel_example_light.png)
 
 | Parameter | Default | Description |
 |---|---|---|
