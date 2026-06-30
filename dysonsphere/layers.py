@@ -1238,10 +1238,11 @@ def add_pvalue(
         _OMNIBUS_TESTS,
         _PARAMETRIC_POSTHOC,
         _POSTHOC_DEFAULTS,
-        _build_report,
         _describe_all,
+        _make_record,
         _pair_effect,
         _push_report,
+        _render_report,
         _run_omnibus,
     )
     from .utils import ensure_polars
@@ -1265,7 +1266,6 @@ def add_pvalue(
     omnibus_result = None
     comparisons: list[dict] = []
     comparison_name: str | None = None
-    comparison_label = "Post-hoc"
 
     # --- omnibus corner label ---
     if is_omnibus:
@@ -1302,7 +1302,6 @@ def add_pvalue(
     else:
         method = test
     comparison_name = method
-    comparison_label = "Post-hoc" if is_omnibus else "Comparisons"
 
     # --- report comparisons ---
     # Omnibus reports ALL pairwise post-hoc comparisons (the full picture), even when
@@ -1414,29 +1413,27 @@ def add_pvalue(
                 )
             )
 
-    # --- report: always queued for export metadata; printed when report=True ---
-    if omnibus_result is not None:
-        report_title = f"Statistics | Omnibus | {omnibus_result.name}"
-    elif pvalues is not None:
-        report_title = "Statistics | Pairwise comparisons | user p-values"
-    else:
-        report_title = f"Statistics | Pairwise comparisons | {test}"
-    report_text = _build_report(
-        title=report_title,
-        descriptives=_describe_all(groups, categories),
+    # --- report: a structured record is always queued for export metadata; ---
+    # --- rendered to text when report=True (print) or save is set (file).   ---
+    record = _make_record(
+        test=test,
+        is_omnibus=is_omnibus,
         omnibus=omnibus_result,
-        comparisons=comparisons or None,
-        comparisonName=comparison_name,
-        comparisonLabel=comparison_label,
+        descriptives=_describe_all(groups, categories),
+        comparisons=comparisons,
+        comparison_test=comparison_name,
+        pvalues_provided=pvalues is not None,
     )
-    _push_report(report_text)
-    if report:
-        print(report_text)
-    if save:
-        directory = Path(save) if isinstance(save, str) else Path.cwd()
-        directory.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        (directory / f"dysonsphere_report_{ts}.txt").write_text(report_text + "\n", encoding="utf-8")
+    _push_report(record)
+    if report or save:
+        report_text = _render_report(record)
+        if report:
+            print(report_text)
+        if save:
+            directory = Path(save) if isinstance(save, str) else Path.cwd()
+            directory.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            (directory / f"dysonsphere_report_{ts}.txt").write_text(report_text + "\n", encoding="utf-8")
 
     if not annotation_layers:
         # omnibusPosition=None with no pairs → report-only; return an invisible layer.

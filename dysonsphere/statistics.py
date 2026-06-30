@@ -44,28 +44,43 @@ _PARAMETRIC_POSTHOC = {"tukey_hsd", "games_howell", "ttest_ind", "ttest_rel"}
 
 
 # ── Report registry ────────────────────────────────────────────────────────
-# add_pvalue() pushes each generated report here; export.save() drains it and
-# appends the text to the export metadata.  Module-level state is the only
-# channel available because Altair strips custom metadata when layers are
-# combined with ``+`` (see CLAUDE.md).
-_REPORTS: list[str] = []
+# add_pvalue() pushes a structured report *record* (a plain dict — the single
+# source of truth) here; export.save() drains it, renders the human-readable
+# text from each record for the metadata description, and embeds the raw records
+# as JSON under usermeta.dysonsphere.statistics in the Vega-Lite spec.  Module-
+# level state is the only channel available because Altair strips custom metadata
+# when layers are combined with ``+`` (see CLAUDE.md).
+_REPORTS: list[dict] = []
+
+# Machine-readable names for the effect-size symbols used in the text report.
+_EFFECT_NAMES = {
+    "η²": "eta_squared",
+    "ε²": "epsilon_squared",
+    "W": "kendalls_w",
+    "d": "cohens_d",
+    "r": "rank_biserial",
+}
 
 
-def _push_report(text: str) -> None:
-    _REPORTS.append(text)
+def _push_report(record: dict) -> None:
+    _REPORTS.append(record)
 
 
-def _drain_reports() -> list[str]:
-    """Return all queued reports (de-duplicated, order-preserving) and clear the queue.
+def _drain_reports() -> list[dict]:
+    """Return all queued report records (de-duplicated, order-preserving) and clear the queue.
 
-    De-duplication collapses the identical reports produced when ``save()`` rebuilds
-    a callable chart once per light/dark variant.
+    De-duplication collapses the identical records produced when ``save()`` rebuilds
+    a callable chart once per light/dark variant.  Records are dicts, so they are
+    compared by their canonical JSON serialization.
     """
+    import json
+
     seen: set[str] = set()
-    out: list[str] = []
+    out: list[dict] = []
     for r in _REPORTS:
-        if r not in seen:
-            seen.add(r)
+        key = json.dumps(r, sort_keys=True, default=str)
+        if key not in seen:
+            seen.add(key)
             out.append(r)
     _REPORTS.clear()
     return out
@@ -92,7 +107,7 @@ def _describe(label: str, x: np.ndarray) -> dict:
         "label": label,
         "n": int(x.size),
         "mean": float(np.mean(x)),
-        "sd": float(np.std(x, ddof=1)) if x.size > 1 else float("nan"),
+        "sd": float(np.std(x, ddof=1)) if x.size > 1 else None,
         "median": float(np.median(x)),
         "q1": float(np.percentile(x, 25)),
         "q3": float(np.percentile(x, 75)),
@@ -325,9 +340,60 @@ def _pair_effect(a: np.ndarray, b: np.ndarray, *, parametric: bool, paired: bool
     return "r", _rank_biserial(a, b)
 
 
-# ── Report builder ─────────────────────────────────────────────────────────
-def _fmt(x: float, decimals: int = 3) -> str:
-    return f"{x:.{decimals}f}"
+# ── Report record (single source of truth) ─────────────────────────────────
+def _make_record(
+    *,
+    test: str,
+    is_omnibus: bool,
+    omnibus: _OmnibusResult | None,
+    descriptives: list[dict],
+    comparisons: list[dict],
+    comparison_test: str | None,
+    pvalues_provided: bool,
+) -> dict:
+    """Build the structured report record.
+
+    This dict is the single source of truth: ``_render_report`` turns it into the
+    plain-text report, and ``export.save`` embeds it verbatim under
+    ``usermeta.dysonsphere.statistics``.  ``comparisons`` is the internal list of
+    dicts with keys ``g1``/``g2``/``pvalue`` and optionally ``effectName``/``effect``.
+    """
+
+    def _effect(symbol: str | None, value) -> dict | None:
+        if symbol is None:
+            return None
+        return {"name": _EFFECT_NAMES.get(symbol, symbol), "symbol": symbol, "value": value}
+
+    record: dict = {
+        "kind": "omnibus" if is_omnibus else "pairwise",
+        "test": None if pvalues_provided else test,
+        "groups": descriptives,
+    }
+    if omnibus is not None:
+        record["omnibus"] = {
+            "name": omnibus.name,
+            "statistic": {"symbol": omnibus.statSymbol, "value": omnibus.stat, "df": list(omnibus.df)},
+            "pvalue": omnibus.pvalue,
+            "effect": _effect(omnibus.effectName, omnibus.effectSize),
+        }
+    record["comparisons"] = {
+        "test": comparison_test,
+        "pairs": [
+            {
+                "group1": c["g1"],
+                "group2": c["g2"],
+                "pvalue": c["pvalue"],
+                "effect": _effect(c.get("effectName"), c.get("effect")),
+            }
+            for c in comparisons
+        ],
+    }
+    return record
+
+
+# ── Text report (rendered from a record) ───────────────────────────────────
+def _fmt(x: float | None, decimals: int = 3) -> str:
+    return "n/a" if x is None else f"{x:.{decimals}f}"
 
 
 def _fmt_p(p: float, decimals: int = 3) -> str:
@@ -335,47 +401,47 @@ def _fmt_p(p: float, decimals: int = 3) -> str:
     return f"< {_fmt(threshold, decimals)}" if p < threshold else f"= {_fmt(p, decimals)}"
 
 
-def _build_report(
-    *,
-    title: str,
-    descriptives: list[dict],
-    omnibus: _OmnibusResult | None = None,
-    comparisons: list[dict] | None = None,
-    comparisonName: str | None = None,
-    comparisonLabel: str = "Post-hoc",
-) -> str:
-    """Assemble the plain-text descriptive + effect-size report.
+def _render_report(record: dict) -> str:
+    """Render the plain-text descriptive + effect-size report from a record dict."""
+    if record["kind"] == "omnibus":
+        title = f"Statistics | Omnibus | {record['omnibus']['name']}"
+    elif record["test"] is None:
+        title = "Statistics | Pairwise comparisons | user p-values"
+    else:
+        title = f"Statistics | Pairwise comparisons | {record['test']}"
 
-    ``comparisons`` is a list of dicts with keys ``g1``, ``g2``, ``pvalue`` and
-    optionally ``effectName``/``effect``.
-    """
     lines: list[str] = [title, "─" * len(title), ""]
 
-    if omnibus is not None:
-        df_str = ", ".join(str(d) for d in omnibus.df)
-        stat = f"{omnibus.statSymbol}({df_str}) = {_fmt(omnibus.stat, 3)}"
-        lines.append(f"{stat}, P {_fmt_p(omnibus.pvalue)}")
-        lines.append(f"Effect size: {omnibus.effectName} = {_fmt(omnibus.effectSize, 3)}")
+    if record["kind"] == "omnibus":
+        o = record["omnibus"]
+        df_str = ", ".join(str(d) for d in o["statistic"]["df"])
+        stat = f"{o['statistic']['symbol']}({df_str}) = {_fmt(o['statistic']['value'])}"
+        lines.append(f"{stat}, P {_fmt_p(o['pvalue'])}")
+        lines.append(f"Effect size: {o['effect']['symbol']} = {_fmt(o['effect']['value'])}")
         lines.append("")
 
     lines.append("Group descriptives:")
-    width = max((len(d["label"]) for d in descriptives), default=0)
-    for d in descriptives:
+    groups = record["groups"]
+    width = max((len(g["label"]) for g in groups), default=0)
+    for g in groups:
         lines.append(
-            f"  {d['label']:<{width}}  n={d['n']:<4d} mean={_fmt(d['mean'])}  sd={_fmt(d['sd'])}  "
-            f"median={_fmt(d['median'])}  IQR=[{_fmt(d['q1'])}, {_fmt(d['q3'])}]  "
-            f"range=[{_fmt(d['min'])}, {_fmt(d['max'])}]"
+            f"  {g['label']:<{width}}  n={g['n']:<4d} mean={_fmt(g['mean'])}  sd={_fmt(g['sd'])}  "
+            f"median={_fmt(g['median'])}  IQR=[{_fmt(g['q1'])}, {_fmt(g['q3'])}]  "
+            f"range=[{_fmt(g['min'])}, {_fmt(g['max'])}]"
         )
 
-    if comparisons:
+    pairs = record["comparisons"]["pairs"]
+    if pairs:
+        name = record["comparisons"]["test"]
+        label = "Post-hoc" if record["kind"] == "omnibus" else "Comparisons"
         lines.append("")
-        lines.append(f"{comparisonLabel}{f' ({comparisonName})' if comparisonName else ''}:")
-        pair_width = max(len(f"{c['g1']} vs {c['g2']}") for c in comparisons)
-        for c in comparisons:
-            pair = f"{c['g1']} vs {c['g2']}"
-            line = f"  {pair:<{pair_width}}  P {_fmt_p(c['pvalue'])}"
-            if c.get("effectName") is not None:
-                line += f"  {c['effectName']} = {_fmt(c['effect'])}"
+        lines.append(f"{label}{f' ({name})' if name else ''}:")
+        pair_width = max(len(f"{p['group1']} vs {p['group2']}") for p in pairs)
+        for p in pairs:
+            pair = f"{p['group1']} vs {p['group2']}"
+            line = f"  {pair:<{pair_width}}  P {_fmt_p(p['pvalue'])}"
+            if p["effect"] is not None:
+                line += f"  {p['effect']['symbol']} = {_fmt(p['effect']['value'])}"
             lines.append(line)
 
     return "\n".join(lines)

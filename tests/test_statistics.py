@@ -306,23 +306,61 @@ class TestReportRegistry:
 
     def test_drain_dedups_and_clears(self):
         st._REPORTS.clear()
-        st._push_report("same")
-        st._push_report("same")
-        st._push_report("other")
-        assert st._drain_reports() == ["same", "other"]
+        same = {"kind": "pairwise", "test": "x"}
+        other = {"kind": "omnibus", "test": "y"}
+        st._push_report(dict(same))
+        st._push_report(dict(same))
+        st._push_report(dict(other))
+        assert st._drain_reports() == [same, other]
         assert st._drain_reports() == []
 
-    def test_build_report_contents(self):
+    def test_make_record_structure(self):
         r = st._run_omnibus("anova", _GROUPS, MULTI)
-        title = "Statistics | Omnibus | ANOVA"
-        text = st._build_report(
-            title=title,
-            descriptives=st._describe_all(_GROUPS, MULTI),
+        rec = st._make_record(
+            test="anova",
+            is_omnibus=True,
             omnibus=r,
+            descriptives=st._describe_all(_GROUPS, MULTI),
             comparisons=[{"g1": "A", "g2": "C", "pvalue": 0.001, "effectName": "d", "effect": -2.5}],
-            comparisonName="tukey_hsd",
+            comparison_test="tukey_hsd",
+            pvalues_provided=False,
         )
+        assert rec["kind"] == "omnibus" and rec["test"] == "anova"
+        assert rec["omnibus"]["statistic"]["symbol"] == "F"
+        assert rec["omnibus"]["effect"]["name"] == "eta_squared"
+        assert rec["comparisons"]["test"] == "tukey_hsd"
+        assert rec["comparisons"]["pairs"][0]["group1"] == "A"
+        assert rec["comparisons"]["pairs"][0]["effect"]["name"] == "cohens_d"
+
+    def test_make_record_is_json_serializable(self):
+        import json
+
+        rec = st._make_record(
+            test="mannwhitneyu",
+            is_omnibus=False,
+            omnibus=None,
+            descriptives=st._describe_all([_A, np.array([1.0])], ["A", "B"]),  # B has n=1 → sd None
+            comparisons=[{"g1": "A", "g2": "B", "pvalue": 0.02, "effectName": "r", "effect": 0.3}],
+            comparison_test="mannwhitneyu",
+            pvalues_provided=False,
+        )
+        json.dumps(rec)  # must not raise (sd is None, not NaN)
+        assert rec["groups"][1]["sd"] is None
+
+    def test_render_report_from_record(self):
+        r = st._run_omnibus("anova", _GROUPS, MULTI)
+        rec = st._make_record(
+            test="anova",
+            is_omnibus=True,
+            omnibus=r,
+            descriptives=st._describe_all(_GROUPS, MULTI),
+            comparisons=[{"g1": "A", "g2": "C", "pvalue": 0.001, "effectName": "d", "effect": -2.5}],
+            comparison_test="tukey_hsd",
+            pvalues_provided=False,
+        )
+        text = st._render_report(rec)
         lines = text.splitlines()
+        title = "Statistics | Omnibus | ANOVA"
         assert lines[0] == title
         assert lines[1] == "─" * len(title)  # box-drawing underline matches title width
         assert "Group descriptives:" in text
@@ -368,21 +406,25 @@ class TestAddPvalueOmnibus:
         # only A-C is bracketed, but the omnibus report should list all 3 pairs
         st._REPORTS.clear()
         add_pvalue(multi_df, "group", "value", pairs=[("A", "C")], test="anova", categories=MULTI)
-        report = st._REPORTS[0]
-        assert "A vs B" in report and "A vs C" in report and "B vs C" in report
+        pairs = st._REPORTS[0]["comparisons"]["pairs"]
+        listed = {(p["group1"], p["group2"]) for p in pairs}
+        assert listed == {("A", "B"), ("A", "C"), ("B", "C")}
 
     def test_report_all_comparisons_omnibus_only(self, multi_df):
         # no brackets at all, but the report still lists every pairwise post-hoc
         st._REPORTS.clear()
         add_pvalue(multi_df, "group", "value", test="kruskal", categories=MULTI)
-        report = st._REPORTS[0]
-        assert "Post-hoc (dunn)" in report
-        assert all(p in report for p in ("A vs B", "A vs C", "B vs C"))
+        rec = st._REPORTS[0]
+        assert rec["comparisons"]["test"] == "dunn"
+        assert len(rec["comparisons"]["pairs"]) == 3
 
-    def test_report_queued(self, multi_df):
+    def test_report_queued_as_record(self, multi_df):
         st._REPORTS.clear()
         add_pvalue(multi_df, "group", "value", test="anova", categories=MULTI)
-        assert len(st._REPORTS) == 1 and "ANOVA" in st._REPORTS[0]
+        assert len(st._REPORTS) == 1
+        rec = st._REPORTS[0]
+        assert rec["kind"] == "omnibus" and rec["omnibus"]["name"] == "ANOVA"
+        assert "ANOVA" in st._render_report(rec)
 
     def test_report_prints(self, multi_df, capsys):
         add_pvalue(multi_df, "group", "value", test="anova", categories=MULTI, report=True)
