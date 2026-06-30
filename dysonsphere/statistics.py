@@ -1,461 +1,381 @@
+"""Pure statistical computation (no Altair).
+
+Backs the chart-annotation constructors in ``layers.py`` (notably
+``add_pvalue``).  Holds the omnibus tests, hand-rolled post-hoc tests,
+effect-size functions, and the descriptive report builder.  Nothing here
+imports Altair, so it is unit-testable in isolation.
+
+The post-hoc tests scipy does not ship (Dunn, Nemenyi, Games-Howell) are
+implemented here from scipy primitives (``rankdata``, ``norm``,
+``studentized_range``) rather than taking a dependency on ``scikit-posthocs``
+(which would drag in statsmodels + seaborn + matplotlib).
+"""
+
+from __future__ import annotations
+
 import math
-from typing import Any, cast
+from dataclasses import dataclass, field
 
-import altair as alt
-import polars as pl
+import numpy as np
 
-from .utils import ensure_polars
+# Omnibus tests ("are *any* of the groups different?").
+_OMNIBUS_TESTS = {"anova", "kruskal", "friedman", "alexandergovern"}
 
-_SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+# Display names + the post-hoc each omnibus test defaults to.
+_OMNIBUS_NAMES = {
+    "anova": "ANOVA",
+    "kruskal": "Kruskal-Wallis",
+    "friedman": "Friedman",
+    "alexandergovern": "Alexander-Govern",
+}
+_POSTHOC_DEFAULTS = {
+    "anova": "tukey_hsd",
+    "alexandergovern": "games_howell",
+    "kruskal": "dunn",
+    "friedman": "nemenyi",
+}
 
+# Pairwise tests usable directly (existing behaviour) or as a post-hoc fallback.
+_PAIRWISE_TESTS = {"mannwhitneyu", "ttest_ind", "ttest_rel", "wilcoxon"}
 
-def _superscript(n: int) -> str:
-    sign = "⁻" if n < 0 else ""
-    return sign + "".join(_SUP[int(d)] for d in str(abs(n)))
-
-
-def _format_pvalue(p: float, decimals: int = 3, notation: str | None = None) -> str:
-    if notation is None:
-        threshold = 10 ** (-decimals)
-        if p < threshold:
-            return f"P < {threshold:.{decimals}f}"
-        return f"P = {p:.{decimals}f}"
-    if notation == "power":
-        exp = round(math.log10(p))
-        return f"P ≈ 10{_superscript(exp)}"
-    if notation == "scientific":
-        exp = math.floor(math.log10(p))
-        mantissa = p / 10**exp
-        return f"P = {mantissa:.{decimals}f}×10{_superscript(exp)}"
-    if notation == "e":
-        return f"P = {p:.{decimals}e}"
-    raise ValueError(f"notation must be 'power', 'scientific', or 'e', got {notation!r}")
+# Post-hoc tests treated as parametric (→ Cohen's d effect size); the rest are
+# rank-based (→ rank-biserial effect size).
+_PARAMETRIC_POSTHOC = {"tukey_hsd", "games_howell", "ttest_ind", "ttest_rel"}
 
 
-def _format_asterisks(p: float) -> str:
-    if p < 0.001:
-        return "***"
-    if p < 0.01:
-        return "**"
-    if p < 0.05:
-        return "*"
-    return "ns"
+# ── Report registry ────────────────────────────────────────────────────────
+# add_pvalue() pushes each generated report here; export.save() drains it and
+# appends the text to the export metadata.  Module-level state is the only
+# channel available because Altair strips custom metadata when layers are
+# combined with ``+`` (see CLAUDE.md).
+_REPORTS: list[str] = []
 
 
-def _pvalue_layer(
-    df: pl.DataFrame | None = None,
-    x_col: str | None = None,
-    y_col: str | None = None,
-    group1: str | None = None,
-    group2: str | None = None,
-    *,
-    test: str = "mannwhitneyu",
-    pvalue: float | None = None,
-    correction: str | None = None,
-    n_comparisons: int = 1,
-    y: float | None = None,
-    y_pad: float = 5,
-    tick_height: float = 0.5,
-    bracket_style: str = "line",
-    label_style: str = "p",
-    categories: list | None = None,
-    chartWidth: int | None = None,
-    strokeWidth: float | None = None,
-    fontSize: int | None = None,
-    reverse: bool = False,
-    decimals: int = 3,
-    notation: str | None = None,
-) -> alt.LayerChart:
-    from scipy import stats as _stats
+def _push_report(text: str) -> None:
+    _REPORTS.append(text)
 
-    # --- p-value ---
-    if pvalue is None:
-        if df is None or x_col is None or y_col is None:
-            raise ValueError("df, x_col, and y_col are required when pvalue is not provided.")
 
-        if test == "tukey_hsd":
-            _cats = categories if categories is not None else sorted(df[x_col].unique().to_list())
-            all_groups = [df.filter(pl.col(x_col) == cat)[y_col].to_numpy() for cat in _cats]
-            result = _stats.tukey_hsd(*all_groups)
-            pvalue = float(result.pvalue[_cats.index(group1)][_cats.index(group2)])
-        else:
-            a = df.filter(pl.col(x_col) == group1)[y_col].to_numpy()
-            b = df.filter(pl.col(x_col) == group2)[y_col].to_numpy()
-            _tests = {
-                "mannwhitneyu": lambda: _stats.mannwhitneyu(a, b, alternative="two-sided").pvalue,
-                "ttest_ind": lambda: _stats.ttest_ind(a, b).pvalue,
-                "ttest_rel": lambda: _stats.ttest_rel(a, b).pvalue,
-                "wilcoxon": lambda: _stats.wilcoxon(a, b).pvalue,
-            }
-            if test not in _tests:
-                raise ValueError(f"Unknown test {test!r}. Choose from: {['tukey_hsd'] + list(_tests)}")
-            pvalue = _tests[test]()
+def _drain_reports() -> list[str]:
+    """Return all queued reports (de-duplicated, order-preserving) and clear the queue.
 
-    # bonferroni correction (skip for tukey_hsd — correction is built in)
-    if correction == "bonferroni" and test != "tukey_hsd":
-        pvalue = min(pvalue * n_comparisons, 1.0)
+    De-duplication collapses the identical reports produced when ``save()`` rebuilds
+    a callable chart once per light/dark variant.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for r in _REPORTS:
+        if r not in seen:
+            seen.add(r)
+            out.append(r)
+    _REPORTS.clear()
+    return out
 
-    label = (
-        _format_asterisks(pvalue)
-        if label_style == "asterisks"
-        else _format_pvalue(pvalue, decimals=decimals, notation=notation)
-    )
 
-    # --- y position ---
-    if y is None:
-        if df is None or x_col is None or y_col is None:
-            raise ValueError("y is required when df, x_col, and y_col are not provided.")
-        y = (
-            cast(
-                float,
-                df.filter(pl.col(x_col).is_in([group1, group2]))[y_col].cast(pl.Float64).max() or 0.0,
-            )
-            + y_pad
-        )
+# ── Omnibus result ─────────────────────────────────────────────────────────
+@dataclass
+class _OmnibusResult:
+    test: str  # key, e.g. "anova"
+    name: str  # display, e.g. "ANOVA"
+    stat: float
+    pvalue: float
+    statSymbol: str  # "F", "H", "χ²", "A"
+    df: tuple[int, ...]  # (df1, df2) for F; (df,) otherwise
+    effectName: str  # "η²", "ε²", "W"
+    effectSize: float
+    descriptives: list[dict] = field(default_factory=list)
 
-    # --- resolve theme-linked defaults ---
-    if chartWidth is None:
-        chartWidth = alt.theme.options.get("chartWidth", 100)
-    if strokeWidth is None:
-        strokeWidth = alt.theme.options.get("axisWidth", 0.5)
-    if fontSize is None:
-        fontSize = 6
 
-    # --- categories and text x position ---
-    if categories is None:
-        if df is None or x_col is None:
-            raise ValueError("categories is required when df and x_col are not provided.")
-        categories = sorted(df[x_col].unique().to_list())
-
-    g1_idx = categories.index(group1)
-    g2_idx = categories.index(group2)
-
-    stroke_cap = alt.theme.options.get("strokeCap", "round")
-    _rule_kwargs = {
-        "strokeWidth": strokeWidth,
-        "strokeDash": [0, 0],
-        "strokeCap": stroke_cap,
+# ── Descriptive statistics ─────────────────────────────────────────────────
+def _describe(label: str, x: np.ndarray) -> dict:
+    x = np.asarray(x, dtype=float)
+    return {
+        "label": label,
+        "n": int(x.size),
+        "mean": float(np.mean(x)),
+        "sd": float(np.std(x, ddof=1)) if x.size > 1 else float("nan"),
+        "median": float(np.median(x)),
+        "q1": float(np.percentile(x, 25)),
+        "q3": float(np.percentile(x, 75)),
+        "min": float(np.min(x)),
+        "max": float(np.max(x)),
     }
 
-    # dy offsets in SVG pixels. Asterisk glyphs sit close to the baseline so a small
-    # offset seats them flush; alphanumeric labels (including "ns") need more clearance.
-    _dy_mag = 2 if label_style == "asterisks" and label != "ns" else 4
-    text_dy = _dy_mag if reverse else -_dy_mag
-    tick_y2 = y + tick_height if reverse else y - tick_height
 
-    bar = (
-        alt.Chart(alt.Data(values=[{"x": group1, "x2": group2, "y": y}]))
-        .mark_rule(**_rule_kwargs)
-        .encode(
-            x=alt.X("x:N"),
-            x2="x2:N",
-            y=alt.Y("y:Q"),
-        )
-    )
-
-    # Band center formula for xOffset charts (paddingInner=0 forced by xOffset,
-    # paddingOuter = bandPadding from theme):
-    #   step = chartWidth / (n + 2*bandPadding)
-    #   center_i = step * (bandPadding + i + 0.5)
-    # Verified against SVG tick positions.
-    band_padding = alt.theme.options.get("bandPadding", 0.1)
-    n = len(categories)
-    step = chartWidth / (n + 2 * band_padding)
-    x_mid_px = step * (2 * band_padding + g1_idx + g2_idx + 1) / 2
-    text = (
-        alt.Chart(alt.Data(values=[{"y": y, "label": label}]))
-        .mark_text(align="center", fontSize=fontSize, dy=text_dy)
-        .encode(
-            x=alt.value(x_mid_px),
-            y=alt.Y("y:Q"),
-            text="label:N",
-        )
-    )
-
-    if bracket_style == "bracket":
-        left_tick = (
-            alt.Chart(alt.Data(values=[{"x": group1, "y": y, "y2": tick_y2}]))
-            .mark_rule(**_rule_kwargs)
-            .encode(
-                x=alt.X("x:N"),
-                y=alt.Y("y:Q"),
-                y2="y2:Q",
-            )
-        )
-        right_tick = (
-            alt.Chart(alt.Data(values=[{"x": group2, "y": y, "y2": tick_y2}]))
-            .mark_rule(**_rule_kwargs)
-            .encode(
-                x=alt.X("x:N"),
-                y=alt.Y("y:Q"),
-                y2="y2:Q",
-            )
-        )
-        return cast(alt.LayerChart, alt.layer(bar, left_tick, right_tick, text))
-
-    return cast(alt.LayerChart, alt.layer(bar, text))
+def _describe_all(groups: list[np.ndarray], labels: list) -> list[dict]:
+    return [_describe(str(lab), g) for lab, g in zip(labels, groups)]
 
 
-def add_pvalue(
-    df: pl.DataFrame | Any,
-    xCol: str,
-    yCol: str,
-    pairs: list[tuple[str, str]],
-    *,
-    test: str = "mannwhitneyu",
-    pvalues: list[float] | None = None,
-    correction: str | None = None,
-    nComparisons: int | None = None,
-    yPositions: list[float] | None = None,
-    yStart: float | None = None,
-    yStep: float | None = None,
-    yPad: float | None = None,
-    categories: list | None = None,
-    chartWidth: int | None = None,
-    bracketStyle: str = "line",
-    labelStyle: str = "p",
-    tickHeight: float | None = None,
-    strokeWidth: float | None = None,
-    fontSize: int | None = None,
-    reverse: list[tuple[str, str]] | None = None,
-    decimals: int = 3,
-    notation: str | None = None,
-) -> alt.LayerChart:
-    """
-    Build p-value annotation layers for one or more group comparisons.
+# ── Effect sizes (omnibus) ─────────────────────────────────────────────────
+def _eta_squared(groups: list[np.ndarray]) -> float:
+    """Classic eta-squared: SS_between / SS_total, computed directly from the data."""
+    all_vals = np.concatenate(groups)
+    grand = all_vals.mean()
+    ss_total = float(np.sum((all_vals - grand) ** 2))
+    ss_between = float(sum(g.size * (g.mean() - grand) ** 2 for g in groups))
+    return ss_between / ss_total if ss_total > 0 else 0.0
 
-    Brackets are stacked automatically so they don't overlap. Shorter-span
-    pairs are placed lower; pairs whose x-ranges overlap are bumped to the
-    next level.
 
-    Combine with your chart using ``+``:  ``chart + add_pvalue(...)``.
+def _epsilon_squared(h: float, n_total: int) -> float:
+    """Epsilon-squared for Kruskal-Wallis: H / (N - 1)."""
+    return h / (n_total - 1) if n_total > 1 else 0.0
 
-    Parameters
-    ----------
-    df:
-        Polars DataFrame containing the data.
-    xCol:
-        Column name for the grouping variable (x-axis).
-    yCol:
-        Column name for the value variable (y-axis). Used to run tests and
-        to auto-place the first bracket.
-    pairs:
-        List of ``(group1, group2)`` tuples identifying the comparisons to
-        annotate. Pass a single-element list for one comparison.
-    test:
-        Scipy test to run for each pair: ``'mannwhitneyu'``, ``'ttest_ind'``,
-        ``'ttest_rel'``, ``'wilcoxon'``, or ``'tukey_hsd'``. Ignored when
-        ``pvalues`` is provided. For ``tukey_hsd``, one omnibus test is run and
-        p-values for each pair are extracted from the result matrix.
-    pvalues:
-        Pre-computed p-values, one per pair in the same order. Skips all
-        statistical tests when provided.
-    correction:
-        Multiple comparison correction applied after testing: ``'bonferroni'``
-        or ``None``. Ignored for ``tukey_hsd`` (correction is built in).
-        Also ignored when ``pvalues`` is provided.
-    nComparisons:
-        Total number of comparisons for Bonferroni correction. Defaults to
-        ``len(pairs)`` when ``correction='bonferroni'`` and not set explicitly.
-    yPositions:
-        Explicit y positions (data units) for each bracket, one per pair in
-        the same order. When provided, overrides all auto-stacking logic
-        (``yStart``, ``yStep``, ``yPad`` are ignored).
-    yStart:
-        Y position (data units) of the lowest bracket. Defaults to
-        ``max(y values for all annotated groups) + yPad``.
-    yStep:
-        Vertical distance (data units) between stacking levels. Defaults to
-        ``yPad * 2``.
-    yPad:
-        Padding above the data maximum when ``yStart`` is auto-placed. Defaults
-        to a fixed visual gap of ~8 px (``bracketStyle='line'``) or ~10 px
-        (``bracketStyle='bracket'``), expressed in data units via ``chartHeight``
-        so the gap stays visually consistent regardless of chart height.
-    categories:
-        Ordered list of all x-axis categories. Inferred from ``df`` (sorted
-        alphabetically) when not provided.
-    chartWidth:
-        Width of the chart in pixels, used to compute text x positions.
-        Auto-detected from ``ds.theme()`` when not set.
-    bracketStyle:
-        ``'line'`` (horizontal bar only) or ``'bracket'`` (bar + end ticks).
-    labelStyle:
-        ``'p'`` (default) renders ``P = 0.012`` / ``P < 0.001``. ``'asterisks'``
-        renders ``*`` / ``**`` / ``***`` / ``ns``.
-    tickHeight:
-        Height of bracket end ticks in data units. Defaults to
-        ``yStep * 0.25`` so ticks scale naturally with bracket spacing.
-        Only used when ``bracketStyle='bracket'``.
-    strokeWidth:
-        Stroke width of bracket lines. Inherits ``axisWidth`` from
-        ``ds.theme()`` when not set.
-    fontSize:
-        Font size of p-value labels. Defaults to ``6``.
-    reverse:
-        List of ``(group1, group2)`` tuples identifying brackets to flip —
-        text moves below the bar and ticks point upward.
-    decimals:
-        Decimal places for p-value labels. When ``notation=None``, controls
-        the display precision of ``P = 0.xxx`` and sets the threshold below
-        which ``P < 0.001`` style is used (threshold = ``10^(-decimals)``).
-        When ``notation='scientific'`` or ``'e'``, controls decimal places in
-        the mantissa. Ignored for ``notation='power'`` (integer exponent only).
-    notation:
-        Format style for p-value labels when ``labelStyle='p'``. ``None``
-        (default) uses ``P = 0.012`` / ``P < 0.001`` style. ``'scientific'``
-        uses ``P = 1.23×10⁻²``. ``'e'`` uses ``P = 1.23e-02``. ``'power'``
-        rounds to the nearest power of 10 giving ``P ≈ 10⁻²`` — note that
-        values within the same decade (e.g. 0.04 and 0.06) map to the same
-        label; best for p-values spanning multiple orders of magnitude.
 
-    Examples
-    --------
-    Single comparison::
+def _kendalls_w(chi2: float, n_subjects: int, k_groups: int) -> float:
+    """Kendall's W for Friedman: χ² / (n * (k - 1))."""
+    denom = n_subjects * (k_groups - 1)
+    return chi2 / denom if denom > 0 else 0.0
 
-        CATEGORIES = ["A", "B", "C"]
-        chart = ds.mark_strip(df, "group", "value", CATEGORIES)
-        chart + ds.add_pvalue(
-            df, "group", "value",
-            pairs=[("A", "B")],
-            categories=CATEGORIES,
-        )
 
-    Multiple comparisons — brackets stacked automatically::
-
-        chart + ds.add_pvalue(
-            df, "group", "value",
-            pairs=[("A", "B"), ("A", "C"), ("B", "C")],
-            test="mannwhitneyu",
-            categories=CATEGORIES,
-        )
-
-    From pre-computed p-values::
-
-        chart + ds.add_pvalue(
-            df, "group", "value",
-            pairs=[("A", "B"), ("A", "C")],
-            pvalues=[0.012, 0.341],
-            categories=CATEGORIES,
-        )
-    """
+# ── Omnibus runners ────────────────────────────────────────────────────────
+def _run_omnibus(test: str, groups: list[np.ndarray], labels: list) -> _OmnibusResult:
     from scipy import stats as _stats
 
-    df = ensure_polars(df)
-    if not pairs:
-        raise ValueError("pairs must not be empty")
+    if test not in _OMNIBUS_TESTS:
+        raise ValueError(f"Unknown omnibus test {test!r}. Choose from: {sorted(_OMNIBUS_TESTS)}")
 
-    if yPositions is not None and len(yPositions) != len(pairs):
-        raise ValueError(f"yPositions length ({len(yPositions)}) does not match pairs length ({len(pairs)})")
+    k = len(groups)
+    n_total = int(sum(g.size for g in groups))
+    name = _OMNIBUS_NAMES[test]
+    descriptives = _describe_all(groups, labels)
 
-    if categories is None:
-        categories = sorted(df[xCol].unique().to_list())
+    if test == "anova":
+        res = _stats.f_oneway(*groups)
+        stat, pval = float(res.statistic), float(res.pvalue)
+        df = (k - 1, n_total - k)
+        return _OmnibusResult(test, name, stat, pval, "F", df, "η²", _eta_squared(groups), descriptives)
 
-    # --- compute p-values ---
-    if pvalues is not None:
-        if len(pvalues) != len(pairs):
-            raise ValueError(f"pvalues length ({len(pvalues)}) does not match pairs length ({len(pairs)})")
-        computed_pvalues = list(pvalues)
-    elif test == "tukey_hsd":
-        all_groups = [df.filter(pl.col(xCol) == cat)[yCol].to_numpy() for cat in categories]
-        result = _stats.tukey_hsd(*all_groups)
-        computed_pvalues = [float(result.pvalue[categories.index(g1)][categories.index(g2)]) for g1, g2 in pairs]
-    else:
-        _tests = {
-            "mannwhitneyu": lambda a, b: _stats.mannwhitneyu(a, b, alternative="two-sided").pvalue,
-            "ttest_ind": lambda a, b: _stats.ttest_ind(a, b).pvalue,
-            "ttest_rel": lambda a, b: _stats.ttest_rel(a, b).pvalue,
-            "wilcoxon": lambda a, b: _stats.wilcoxon(a, b).pvalue,
-        }
-        if test not in _tests:
-            raise ValueError(f"Unknown test {test!r}. Choose from: {['tukey_hsd'] + list(_tests)}")
-        computed_pvalues = []
-        for g1, g2 in pairs:
-            a = df.filter(pl.col(xCol) == g1)[yCol].to_numpy()
-            b = df.filter(pl.col(xCol) == g2)[yCol].to_numpy()
-            computed_pvalues.append(float(_tests[test](a, b)))
-
-    # bonferroni correction (skip for tukey_hsd — built in; skip when pvalues provided)
-    if correction == "bonferroni" and test != "tukey_hsd" and pvalues is None:
-        n = nComparisons if nComparisons is not None else len(pairs)
-        computed_pvalues = [min(p * n, 1.0) for p in computed_pvalues]
-
-    # --- y positioning ---
-    if yPad is None:
-        annotated_groups_for_pad = list({g for pair in pairs for g in pair})
-        y_vals = df.filter(pl.col(xCol).is_in(annotated_groups_for_pad))[yCol]
-        y_range = cast(float, y_vals.cast(pl.Float64).max() or 0.0) - cast(float, y_vals.cast(pl.Float64).min() or 0.0)
-        chart_height = alt.theme.options.get("chartHeight", 100)
-        yPad = (10.0 if bracketStyle == "bracket" else 8.0) * y_range / chart_height
-
-    if yPositions is not None:
-        final_y = list(yPositions)
-        if tickHeight is None:
-            tickHeight = (yPad * 2) * 0.25
-    else:
-        if yStart is None:
-            annotated_groups = list({g for pair in pairs for g in pair})
-            yStart = (
-                cast(
-                    float,
-                    df.filter(pl.col(xCol).is_in(annotated_groups))[yCol].cast(pl.Float64).max() or 0.0,
-                )
-                + yPad
-            )
-
-        if yStep is None:
-            yStep = yPad * 2
-
-        if tickHeight is None:
-            tickHeight = yStep * 0.25
-
-        # Assign stacking levels via greedy interval scheduling.
-        # Shorter spans go to lower levels so narrow brackets sit closer to the data.
-        pair_indices = [(categories.index(g1), categories.index(g2)) for g1, g2 in pairs]
-        sort_order = sorted(
-            range(len(pairs)),
-            key=lambda i: abs(pair_indices[i][1] - pair_indices[i][0]),
+    if test == "kruskal":
+        res = _stats.kruskal(*groups)
+        stat, pval = float(res.statistic), float(res.pvalue)
+        return _OmnibusResult(
+            test, name, stat, pval, "H", (k - 1,), "ε²", _epsilon_squared(stat, n_total), descriptives
         )
 
-        levels: list[list[tuple[int, int]]] = []
-        pair_levels = [0] * len(pairs)
-
-        for i in sort_order:
-            lo, hi = min(pair_indices[i]), max(pair_indices[i])
-            placed = False
-            for level_idx, occupied in enumerate(levels):
-                overlaps = any(not (hi < occ_lo or lo > occ_hi) for occ_lo, occ_hi in occupied)
-                if not overlaps:
-                    occupied.append((lo, hi))
-                    pair_levels[i] = level_idx
-                    placed = True
-                    break
-            if not placed:
-                levels.append([(lo, hi)])
-                pair_levels[i] = len(levels) - 1
-
-        final_y = [yStart + pair_levels[i] * yStep for i in range(len(pairs))]
-
-    # --- build one layer per pair ---
-    layer_charts = []
-    for i, ((g1, g2), pval) in enumerate(zip(pairs, computed_pvalues)):
-        layer_charts.append(
-            _pvalue_layer(
-                group1=g1,
-                group2=g2,
-                pvalue=pval,
-                y=final_y[i],
-                tick_height=tickHeight,
-                bracket_style=bracketStyle,
-                label_style=labelStyle,
-                categories=categories,
-                chartWidth=chartWidth,
-                strokeWidth=strokeWidth,
-                fontSize=fontSize,
-                reverse=(g1, g2) in reverse if reverse is not None else False,
-                decimals=decimals,
-                notation=notation,
-            )
+    if test == "friedman":
+        lengths = {g.size for g in groups}
+        if len(lengths) != 1:
+            raise ValueError("friedman requires balanced data: every group must have the same number of observations.")
+        res = _stats.friedmanchisquare(*groups)
+        stat, pval = float(res.statistic), float(res.pvalue)
+        n_subjects = groups[0].size
+        return _OmnibusResult(
+            test, name, stat, pval, "χ²", (k - 1,), "W", _kendalls_w(stat, n_subjects, k), descriptives
         )
 
-    return cast(alt.LayerChart, alt.layer(*layer_charts))
+    # alexandergovern
+    res = _stats.alexandergovern(*groups)
+    stat, pval = float(res.statistic), float(res.pvalue)
+    return _OmnibusResult(test, name, stat, pval, "A", (k - 1,), "η²", _eta_squared(groups), descriptives)
+
+
+# ── Post-hoc tests (hand-rolled) ───────────────────────────────────────────
+def _dunn_matrix(groups: list[np.ndarray]) -> np.ndarray:
+    """Dunn's test (post-hoc for Kruskal-Wallis). Returns a k×k matrix of unadjusted p-values.
+
+    z_ij = (R̄_i − R̄_j) / sqrt( [N(N+1)/12 − Σ(t³−t)/(12(N−1))] · (1/n_i + 1/n_j) )
+    where R̄ are mean ranks over the pooled, tie-averaged ranking.
+    """
+    from scipy.stats import norm, rankdata
+
+    k = len(groups)
+    sizes = [g.size for g in groups]
+    n = int(sum(sizes))
+    pooled = np.concatenate(groups)
+    ranks = rankdata(pooled)
+    mean_ranks, idx = [], 0
+    for s in sizes:
+        mean_ranks.append(ranks[idx : idx + s].mean())
+        idx += s
+
+    _, counts = np.unique(pooled, return_counts=True)
+    ties = float(np.sum(counts**3 - counts))
+    sigma = (n * (n + 1) / 12.0) - ties / (12.0 * (n - 1))
+
+    p = np.ones((k, k))
+    for i in range(k):
+        for j in range(i + 1, k):
+            se = math.sqrt(sigma * (1.0 / sizes[i] + 1.0 / sizes[j]))
+            z = (mean_ranks[i] - mean_ranks[j]) / se
+            p[i, j] = p[j, i] = float(2 * norm.sf(abs(z)))
+    return p
+
+
+def _games_howell_matrix(groups: list[np.ndarray]) -> np.ndarray:
+    """Games-Howell (post-hoc for unequal-variance / Welch-type designs). k×k p-value matrix.
+
+    t = (m_i − m_j) / sqrt(s_i²/n_i + s_j²/n_j), with Welch-Satterthwaite df, and
+    p from the studentized range: q = |t|·√2, p = sr.sf(q, k, df).
+    """
+    from scipy.stats import studentized_range
+
+    k = len(groups)
+    means = [float(g.mean()) for g in groups]
+    var = [float(g.var(ddof=1)) for g in groups]
+    sizes = [g.size for g in groups]
+
+    p = np.ones((k, k))
+    for i in range(k):
+        for j in range(i + 1, k):
+            vi, vj = var[i] / sizes[i], var[j] / sizes[j]
+            t = (means[i] - means[j]) / math.sqrt(vi + vj)
+            df = (vi + vj) ** 2 / (vi**2 / (sizes[i] - 1) + vj**2 / (sizes[j] - 1))
+            q = abs(t) * math.sqrt(2)
+            p[i, j] = p[j, i] = float(studentized_range.sf(q, k, df))
+    return p
+
+
+def _nemenyi_matrix(groups: list[np.ndarray]) -> np.ndarray:
+    """Nemenyi (post-hoc for Friedman). Requires balanced data. k×k p-value matrix.
+
+    Within-block ranks → mean rank per treatment. q = |R̄_i − R̄_j| / sqrt(k(k+1)/(6n)),
+    p = sr.sf(q·√2, k, ∞).
+    """
+    from scipy.stats import rankdata, studentized_range
+
+    lengths = {g.size for g in groups}
+    if len(lengths) != 1:
+        raise ValueError("nemenyi requires balanced data: every group must have the same number of observations.")
+
+    data = np.column_stack(groups)  # n_subjects × k
+    n, k = data.shape
+    ranks = np.apply_along_axis(rankdata, 1, data)
+    mean_ranks = ranks.mean(axis=0)
+
+    p = np.ones((k, k))
+    denom = math.sqrt(k * (k + 1) / (6.0 * n))
+    for i in range(k):
+        for j in range(i + 1, k):
+            q = abs(mean_ranks[i] - mean_ranks[j]) / denom
+            p[i, j] = p[j, i] = float(studentized_range.sf(q * math.sqrt(2), k, np.inf))
+    return p
+
+
+def _tukey_matrix(groups: list[np.ndarray]) -> np.ndarray:
+    from scipy import stats as _stats
+
+    return np.asarray(_stats.tukey_hsd(*groups).pvalue, dtype=float)
+
+
+def _adjust(pvals: list[float], method: str | None, m: int) -> list[float]:
+    """Apply a multiple-comparison correction to a flat list of p-values."""
+    if method is None:
+        return list(pvals)
+    if method == "bonferroni":
+        return [min(p * m, 1.0) for p in pvals]
+    if method == "holm":
+        order = sorted(range(len(pvals)), key=lambda i: pvals[i])
+        out = [0.0] * len(pvals)
+        running = 0.0
+        for rank, i in enumerate(order):
+            running = max(running, min(pvals[i] * (m - rank), 1.0))
+            out[i] = running
+        return out
+    raise ValueError(f"correction must be None, 'bonferroni', or 'holm', got {method!r}")
+
+
+def _post_hoc_matrix(name: str, groups: list[np.ndarray], correction: str | None) -> np.ndarray:
+    """Return a k×k matrix of post-hoc p-values, corrected over all unique pairs.
+
+    ``tukey_hsd`` ignores ``correction`` (its correction is built in).
+    """
+    builders = {
+        "tukey_hsd": _tukey_matrix,
+        "dunn": _dunn_matrix,
+        "nemenyi": _nemenyi_matrix,
+        "games_howell": _games_howell_matrix,
+    }
+    if name not in builders:
+        raise ValueError(f"Unknown post-hoc test {name!r}. Choose from: {sorted(builders)}")
+
+    mat = builders[name](groups)
+    if name == "tukey_hsd" or correction is None:
+        return mat
+
+    k = mat.shape[0]
+    pairs = [(i, j) for i in range(k) for j in range(i + 1, k)]
+    adjusted = _adjust([mat[i, j] for i, j in pairs], correction, len(pairs))
+    out = np.ones_like(mat)
+    for (i, j), p in zip(pairs, adjusted):
+        out[i, j] = out[j, i] = p
+    return out
+
+
+# ── Pairwise effect sizes ──────────────────────────────────────────────────
+def _cohens_d(a: np.ndarray, b: np.ndarray, paired: bool) -> float:
+    if paired:
+        d = a - b
+        sd = np.std(d, ddof=1)
+        return float(np.mean(d) / sd) if sd > 0 else 0.0
+    na, nb = a.size, b.size
+    sp = math.sqrt(((na - 1) * np.var(a, ddof=1) + (nb - 1) * np.var(b, ddof=1)) / (na + nb - 2))
+    return float((a.mean() - b.mean()) / sp) if sp > 0 else 0.0
+
+
+def _rank_biserial(a: np.ndarray, b: np.ndarray) -> float:
+    """Rank-biserial correlation from the Mann-Whitney U: r = 1 − 2U/(n_a·n_b)."""
+    from scipy.stats import mannwhitneyu
+
+    u = float(mannwhitneyu(a, b, alternative="two-sided").statistic)
+    return 1.0 - (2.0 * u) / (a.size * b.size)
+
+
+def _pair_effect(a: np.ndarray, b: np.ndarray, *, parametric: bool, paired: bool = False) -> tuple[str, float]:
+    if parametric:
+        return "d", _cohens_d(a, b, paired)
+    return "r", _rank_biserial(a, b)
+
+
+# ── Report builder ─────────────────────────────────────────────────────────
+def _fmt(x: float, decimals: int = 3) -> str:
+    return f"{x:.{decimals}f}"
+
+
+def _fmt_p(p: float, decimals: int = 3) -> str:
+    threshold = 10 ** (-decimals)
+    return f"< {_fmt(threshold, decimals)}" if p < threshold else f"= {_fmt(p, decimals)}"
+
+
+def _build_report(
+    *,
+    title: str,
+    descriptives: list[dict],
+    omnibus: _OmnibusResult | None = None,
+    comparisons: list[dict] | None = None,
+    comparisonName: str | None = None,
+    comparisonLabel: str = "Post-hoc",
+) -> str:
+    """Assemble the plain-text descriptive + effect-size report.
+
+    ``comparisons`` is a list of dicts with keys ``g1``, ``g2``, ``pvalue`` and
+    optionally ``effectName``/``effect``.
+    """
+    lines: list[str] = [f"=== {title} ==="]
+
+    if omnibus is not None:
+        df_str = ", ".join(str(d) for d in omnibus.df)
+        stat = f"{omnibus.statSymbol}({df_str}) = {_fmt(omnibus.stat, 3)}"
+        lines.append(f"{omnibus.name}: {stat}, P {_fmt_p(omnibus.pvalue)}")
+        lines.append(f"Effect size: {omnibus.effectName} = {_fmt(omnibus.effectSize, 3)}")
+        lines.append("")
+
+    lines.append("Group descriptives:")
+    width = max((len(d["label"]) for d in descriptives), default=0)
+    for d in descriptives:
+        lines.append(
+            f"  {d['label']:<{width}}  n={d['n']:<4d} mean={_fmt(d['mean'])}  sd={_fmt(d['sd'])}  "
+            f"median={_fmt(d['median'])}  IQR=[{_fmt(d['q1'])}, {_fmt(d['q3'])}]  "
+            f"range=[{_fmt(d['min'])}, {_fmt(d['max'])}]"
+        )
+
+    if comparisons:
+        lines.append("")
+        lines.append(f"{comparisonLabel}{f' ({comparisonName})' if comparisonName else ''}:")
+        pair_width = max(len(f"{c['g1']} vs {c['g2']}") for c in comparisons)
+        for c in comparisons:
+            pair = f"{c['g1']} vs {c['g2']}"
+            line = f"  {pair:<{pair_width}}  P {_fmt_p(c['pvalue'])}"
+            if c.get("effectName") is not None:
+                line += f"  {c['effectName']} = {_fmt(c['effect'])}"
+            lines.append(line)
+
+    return "\n".join(lines)
