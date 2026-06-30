@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import getpass
+import html
+import importlib.metadata
+import re
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Union, cast
 
@@ -21,6 +27,7 @@ def save(
     ppi: int = 1200,
     description: str | None = None,
     saveVegaSpec: bool = True,
+    saveMetadata: bool = True,
     background: list[str] = ["light", "dark"],
 ) -> None:
     """
@@ -51,10 +58,18 @@ def save(
     ppi:
         Pixel density for PNG output.
     description:
-        Optional description embedded in the chart via ``chart.properties(description=...)``.
-        Appears as a ``<desc>`` element in SVG output.
+        Optional description stored in the Vega-Lite JSON spec's ``description`` field
+        and injected as a ``<desc>`` element in SVG output.
     saveVegaSpec:
-        If ``True``, also writes ``<filename>.json`` containing the full Vega-Lite spec.
+        If ``True``, also writes ``<filename>_vegalite.json`` containing the full Vega-Lite spec.
+    saveMetadata:
+        If ``True`` (default), appends a generation info string to the description
+        (newline-separated if ``description`` is also set). Format: ``"Generated with
+        <script> by <user> using Python <ver> on <YYYYMMDD> at <HH:MM:SS> UTC using
+        altair <ver> / dysonsphere <ver>."``. In Jupyter, ``<script>`` is
+        ``"<jupyter-notebook>"``. Username falls back to ``"unknown_user"`` if the OS
+        does not expose one. Appears in both the SVG ``<desc>`` element and the
+        Vega-Lite JSON spec's ``description`` field.
     background:
         Which background variants to render. Defaults to ``["light", "dark"]``. Pass
         ``["light"]`` or ``["dark"]`` to render only one variant.
@@ -77,6 +92,24 @@ def save(
     if not alt.theme.options:
         raise RuntimeError("ds.theme() must be called before ds.save().")
 
+    if saveMetadata:
+        try:
+            _shell = get_ipython().__class__.__name__  # ty: ignore[unresolved-reference]
+            _script = "<jupyter-notebook>" if _shell == "ZMQInteractiveShell" else "<ipython>"
+        except NameError:
+            _script = Path(sys.argv[0]).name or "<unknown-script>"
+        try:
+            _user = getpass.getuser()
+        except Exception:
+            _user = "unknown_user"
+        _py_ver = sys.version.split()[0]
+        _timestamp = datetime.now(timezone.utc).strftime("%Y%m%d at %H:%M:%S UTC")
+        _ds_ver = importlib.metadata.version("dysonsphere")
+        _meta = f"Generated with {_script} by {_user} using Python {_py_ver} on {_timestamp} using altair {alt.__version__} / dysonsphere {_ds_ver}."
+        _effective_desc: str | None = f"{description}\n{_meta}" if description is not None else _meta
+    else:
+        _effective_desc = description
+
     # _resolve() is called once per variant (or once for the spec).
     # When chart is a callable it is re-invoked each time so that any
     # marks whose colours read from alt.theme.options at construction time
@@ -84,7 +117,7 @@ def save(
     # darkmode value that was just toggled above.
     def _resolve() -> _AltairChart:
         c = cast(_AltairChart, chart() if callable(chart) else chart)  # ty: ignore[call-top-callable]
-        return c.properties(description=description) if description is not None else c
+        return c.properties(description=_effective_desc) if _effective_desc is not None else c
 
     base = Path(filename)
     original_darkmode = alt.theme.options.get("darkmode", False)
@@ -117,6 +150,10 @@ def save(
             _simplify_svg(svg_path)
             with open(svg_path, encoding="utf-8") as f:
                 svg_content = f.read()
+            if _effective_desc is not None:
+                escaped = html.escape(_effective_desc)
+                svg_content = re.sub(r"(<svg[^>]*>)", rf"\1<desc>{escaped}</desc>", svg_content, count=1)
+                Path(svg_path).write_text(svg_content, encoding="utf-8")
             png_path = str(base.parent / f"{base.name}{suffix}.png")
             Path(png_path).write_bytes(vlc.svg_to_png(svg_content, ppi=ppi))
     finally:

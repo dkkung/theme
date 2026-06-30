@@ -199,6 +199,52 @@ class TestSave:
         save(simple_chart, str(tmp_path / "out"), description="my chart", background=["light"])
         assert "my chart" in (tmp_path / "out_vegalite.json").read_text()
 
+    def test_description_in_svg(self, simple_chart, tmp_path):
+        save(simple_chart, str(tmp_path / "out"), description="my chart", saveMetadata=False, background=["light"])
+        assert "<desc>my chart</desc>" in (tmp_path / "out_light.svg").read_text()
+
+    def test_save_metadata_on_by_default(self, simple_chart, tmp_path):
+        save(simple_chart, str(tmp_path / "out"), background=["light"])
+        spec = (tmp_path / "out_vegalite.json").read_text()
+        assert "Generated with" in spec
+
+    def test_save_metadata_can_be_disabled(self, simple_chart, tmp_path):
+        save(simple_chart, str(tmp_path / "out"), saveMetadata=False, background=["light"])
+        spec = (tmp_path / "out_vegalite.json").read_text()
+        assert "Generated with" not in spec
+
+    def test_save_metadata_in_spec(self, simple_chart, tmp_path):
+        import altair as alt
+        import importlib.metadata
+        import sys
+        save(simple_chart, str(tmp_path / "out"), saveMetadata=True, background=["light"])
+        spec = (tmp_path / "out_vegalite.json").read_text()
+        assert f"altair {alt.__version__}" in spec
+        assert f"dysonsphere {importlib.metadata.version('dysonsphere')}" in spec
+        assert f"Python {sys.version.split()[0]}" in spec
+        assert "UTC" in spec
+
+    def test_save_metadata_in_svg(self, simple_chart, tmp_path):
+        save(simple_chart, str(tmp_path / "out"), saveMetadata=True, background=["light"])
+        svg = (tmp_path / "out_light.svg").read_text()
+        assert "<desc>" in svg
+        assert "altair" in svg
+        assert "UTC" in svg
+
+    def test_save_metadata_appended_to_description(self, simple_chart, tmp_path):
+        save(simple_chart, str(tmp_path / "out"), description="Figure 1", saveMetadata=True, background=["light"])
+        import json
+        desc = json.loads((tmp_path / "out_vegalite.json").read_text())["description"]
+        assert "Figure 1" in desc
+        assert "Generated with" in desc
+        assert "altair" in desc
+
+    def test_save_metadata_description_order(self, simple_chart, tmp_path):
+        save(simple_chart, str(tmp_path / "out"), description="Figure 1", saveMetadata=True, background=["light"])
+        import json
+        desc = json.loads((tmp_path / "out_vegalite.json").read_text())["description"]
+        assert desc.index("Figure 1") < desc.index("Generated with")
+
 
 # ── _fix_tick_alignment() ─────────────────────────────────────────────────────
 

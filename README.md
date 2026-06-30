@@ -312,12 +312,32 @@ Calling `chart.save()` directly skips all of the above and will produce misalign
 `ds.save()` produces light and dark PNG and SVG files from a single call. A Vega-Lite JSON spec is also saved by default for full reproducibility. It accepts any Altair chart type — `Chart`, `LayerChart`, `FacetChart`, `HConcatChart`, `VConcatChart`, or `ConcatChart` — as well as a zero-argument callable that returns one.
 
 ```python
-ds.save(chart, "myplot", ppi=1200)                # default PPI; reduce for faster exports
-ds.save(chart, "myplot", saveVegaSpec=False)      # skip the JSON spec
-ds.save(chart, "myplot", description="Figure 1")  # embed a description in the SVG
-ds.save(chart, "myplot", background=["light"])    # light variant only
-ds.save(chart, "myplot", background=["dark"])     # dark variant only
+ds.save(chart, "myplot", ppi=1200)                 # default PPI; reduce for faster exports
+ds.save(chart, "myplot", saveVegaSpec=False)       # skip the JSON spec
+ds.save(chart, "myplot", description="Figure 1")   # embed a description in SVG <desc> and Vega-Lite spec
+ds.save(chart, "myplot", saveMetadata=False)       # suppress generation metadata
+ds.save(chart, "myplot", background=["light"])     # light variant only
+ds.save(chart, "myplot", background=["dark"])      # dark variant only
 ```
+
+#### Metadata
+
+By default, `ds.save()` embeds a generation info string in the SVG `<desc>` element and the Vega-Lite JSON spec. This records exactly what generated the file — useful for tracking down which script produced a plot and under which environment.
+
+```
+Generated with analysis.py by username using Python vX.Y.Z on YYYYMMDD at HH:MM:SS UTC using altair vX.Y.Z / dysonsphere vX.Y.Z.
+```
+
+When running in a Jupyter notebook the script name is replaced with `<jupyter-notebook>`. If the OS does not expose a username it falls back to `unknown_user`. The same string is written to both outputs — you can inspect it with any SVG editor or text editor, or by reading `myplot_vegalite.json`.
+
+Pass `description=` to prepend your own label; the metadata info follows on a new line:
+
+```python
+ds.save(chart, "myplot", description="Figure 1")
+# description field: "Figure 1\nGenerated with analysis.py by username using Python ..."
+```
+
+Pass `saveMetadata=False` to suppress the metadata description entirely.
 
 ---
 
