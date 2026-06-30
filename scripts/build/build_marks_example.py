@@ -38,7 +38,7 @@ df = pl.DataFrame(
     }
 )
 
-ds.theme(palette="blues2", legend=False)
+ds.theme(viewFill="white", palette="blues2", legend=False)
 
 title_params = dict(orient="top", anchor="start", offset=4)
 fontSize = alt.theme.options.get("fontSize", 7)

@@ -317,8 +317,6 @@ ds.save(chart, "myplot", background=["dark"])     # dark variant only
 
 ### Data transforms
 
-![transforms example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/transforms_example_light.png)
-
 #### Beeswarm (`add_beeswarm`)
 
 Computes collision-avoiding x-offsets per group using an analytic method. Points are sorted by y position and placed greedily from the centre outward: for each point, the forbidden x intervals imposed by already-placed neighbours are computed exactly as `px ± √((2·spread)² − dy²)`, and the candidate closest to 0 outside all intervals is chosen. Better than jitter for small n; total width grows with n.
@@ -361,9 +359,9 @@ alt.Chart(df).mark_circle().encode(
 | `outCol` | `"jitter_x"` | Output column name |
 | `seed` | `20220701` | Random seed |
 
-### Custom marks
+![transforms example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/transforms_example_light.png)
 
-![marks example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/marks_example_light.png)
+### Custom marks
 
 #### Strip (`mark_strip`)
 
@@ -422,6 +420,8 @@ ds.save(alt.hconcat(left, right), "comparison")
 | `steps` | `200` | KDE grid resolution per group |
 | `yTitle` | `yCol` | Y-axis title; `None` suppresses it |
 | `xTitle` | `None` | X-axis title; `None` (default) suppresses it |
+
+![marks example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/marks_example_light.png)
 
 ### Statistical annotations (`add_pvalue`)
 
