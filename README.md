@@ -403,8 +403,33 @@ The block has these keys:
 - `provenance` — the generation facts as structured fields: `user`, `script`, `timestamp` (ISO-8601), `python`, `altair`, `dysonsphere`. (In a Jupyter notebook `script` is `<jupyter-notebook>`; if the OS exposes no username, `user` is `unknown_user`.)
 - `statistics` — the structured records from any [`add_comparisons()`](#adding-p-value-annotations) / `add_correlation()` calls (per-group descriptives, the omnibus result, the comparison test + correction method, and every comparison with exact p-values and effect sizes). Read it back with `json.load(open("myplot_vegalite.json"))["usermeta"]["dysonsphere"]["statistics"]` — no text parsing, and trivial to turn into CSV/TSV.
 - `report` — the same statistics rendered as a **human-readable table** (the descriptive + effect-size text), so you can read it straight out of the file. On by default (`embedReport=True`); set `embedReport=False` to keep just the structured block. In the SVG and PNG it's carried in its own readable channel (`<metadata id="dysonsphere-report">` / `iTXt dysonsphere-report`, real newlines) rather than escaped inside the JSON blob.
+- `theme` — the resolved `ds.theme()` arguments used for the figure (dysonsphere params, not Altair's), so the exact styling is recorded and reconstructable.
 
 None of this touches `description` — that stays your `description=` text only. (The report is also available standalone via `ds.add_comparisons(..., report=True)` to stdout or `save="dir"` to a `.txt`.)
+
+##### Reading it back
+
+`ds.read()` pulls the metadata back out of any exported PNG / SVG / JSON:
+
+```python
+ds.read("myplot_light.png")                       # prints the report table, returns the text
+ds.read("myplot_light.png", save="reports")       # + writes reports/dysonsphere_report_<ts>.txt
+ds.read("myplot_light.png", what="statistics")    # the structured records (exact floats)
+ds.read("myplot_vegalite.json", what="metadata")  # the whole {provenance, statistics, theme, report} dict
+```
+
+`what="report"` (default) even **re-renders the table from the records** if the prose wasn't embedded (`embedReport=False`), so it works on any dysonsphere-saved file.
+
+`ds.load()` rebuilds the chart from the **Vega-Lite JSON** (`_vegalite.json`):
+
+```python
+chart = ds.load("myplot_vegalite.json")            # composable Altair object; re-applies the saved theme
+chart + ds.add_comparisons(df, "g", "v", pairs)    # extend it, then ds.save() again
+ds.load("myplot_vegalite.json", raw=True)          # the raw spec dict — re-renders pixel-identically
+ds.load("myplot_vegalite.json", applyTheme=False)  # don't touch the active theme
+```
+
+By default `load()` returns a real, composable Altair object with the file's theme re-applied (which, like any `ds.theme()` call, **replaces the active theme globally**). It strips the theme `config` (Altair's schema is stricter than Vega-Lite's), so the styling comes from the re-applied theme; use `raw=True` for the untouched spec dict if you want a faithful re-render without touching the global theme. JSON only — PNG/SVG carry the metadata but not the full spec.
 
 The `description=` field is entirely yours: whatever you pass is stored verbatim (nothing appended) in the SVG `<desc>`, the PNG `Description` chunk, and the JSON `description` key — so it stays a clean chart label / aria-label.
 

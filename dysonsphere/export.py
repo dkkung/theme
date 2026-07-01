@@ -179,9 +179,15 @@ def save(
     _usermeta_json: str | None = None
     _report_text: str | None = None
     if saveMetadata:
+        from .theme import _BUILTIN_DEFAULTS
+
         _ds_block: dict = {"provenance": _provenance}
         if _records:
             _ds_block["statistics"] = _records
+        # theme: the resolved `ds.theme()` args (only `_BUILTIN_DEFAULTS` keys, so every one
+        # is a valid ds.theme() kwarg — these are dysonsphere params, never Altair's).  Lets
+        # `load()` reconstruct the exact styling via `ds.theme(**theme)`.
+        _ds_block["theme"] = {k: v for k, v in alt.theme.options.items() if k in _BUILTIN_DEFAULTS}
         _usermeta = {"dysonsphere": _ds_block}
         # Same structured block, serialized for the SVG <metadata> and PNG iTXt so those
         # formats are self-contained.  ensure_ascii=False keeps η²/─ literal (UTF-8).
@@ -274,6 +280,133 @@ def save(
     finally:
         alt.theme.options["darkmode"] = original_darkmode
         alt.theme.options["transparentBackground"] = original_transparent
+
+
+def _read_png_text(png_bytes: bytes, keyword: str) -> str | None:
+    """Return the UTF-8 text of the PNG ``iTXt`` chunk with ``keyword`` (or None)."""
+    i = 8  # skip the 8-byte PNG signature
+    kw = keyword.encode()
+    while i + 8 <= len(png_bytes):
+        length = int.from_bytes(png_bytes[i : i + 4], "big")
+        ctype = png_bytes[i + 4 : i + 8]
+        chunk = png_bytes[i + 8 : i + 8 + length]
+        if ctype == b"iTXt" and chunk.split(b"\x00", 1)[0] == kw:
+            # keyword\0 + compflag/method/lang/transkw nulls + text
+            return chunk.split(b"\x00", 1)[1].lstrip(b"\x00").decode("utf-8")
+        if ctype == b"IEND":
+            break
+        i += 12 + length
+    return None
+
+
+def _read_dysonsphere_block(path: str) -> dict:
+    """Read the embedded ``usermeta.dysonsphere`` block from a dysonsphere-exported PNG,
+    SVG, or Vega-Lite JSON (detected by extension), as the unified
+    ``{provenance, statistics, theme, report}`` dict.  For SVG/PNG the ``report`` (which
+    rides in its own readable channel) is merged back in.  Raises if none is found.
+    """
+    p = Path(path)
+    ext = p.suffix.lower()
+    if ext == ".json":
+        block = (json.loads(p.read_text(encoding="utf-8")).get("usermeta") or {}).get("dysonsphere")
+    elif ext == ".svg":
+        svg = p.read_text(encoding="utf-8")
+        m = re.search(r'<metadata id="dysonsphere"><!\[CDATA\[(.*?)\]\]></metadata>', svg, re.DOTALL)
+        block = json.loads(m.group(1)) if m else None
+        r = re.search(r'<metadata id="dysonsphere-report">(.*?)</metadata>', svg, re.DOTALL)
+        if block is not None and r is not None:
+            block["report"] = html.unescape(r.group(1))
+    elif ext == ".png":
+        data = p.read_bytes()
+        struct = _read_png_text(data, "dysonsphere")
+        block = json.loads(struct) if struct is not None else None
+        rep = _read_png_text(data, "dysonsphere-report")
+        if block is not None and rep is not None:
+            block["report"] = rep
+    else:
+        raise ValueError(f"read() supports .png, .svg, or .json files, got {p.suffix!r}")
+    if block is None:
+        raise ValueError(f"no dysonsphere metadata found in {path!r} — was it saved by ds.save()?")
+    return block
+
+
+def read(path: str, *, what: str = "report", save: bool | str = False) -> "str | list | dict":
+    """Read back the metadata embedded by :func:`save` from a PNG, SVG, or Vega-Lite JSON.
+
+    Parameters
+    ----------
+    path:
+        A dysonsphere-exported ``.png``, ``.svg``, or ``_vegalite.json`` file.
+    what:
+        Which artifact to return:
+
+        - ``'report'`` (default) — the human-readable report **table** as a ``str``;
+          it is printed to stdout and returned. Falls back to re-rendering it from the
+          embedded ``statistics`` records if the prose text wasn't saved
+          (``embedReport=False``).
+        - ``'statistics'`` — the structured **records** (list of dicts, exact floats).
+        - ``'metadata'`` — the whole ``{provenance, statistics, theme, report}`` dict.
+    save:
+        Only for ``what='report'``: ``True`` writes the report to a ``.txt`` in the cwd;
+        a string writes to that directory.
+    """
+    block = _read_dysonsphere_block(path)
+    if what == "metadata":
+        return block
+    if what == "statistics":
+        return block.get("statistics", [])
+    if what != "report":
+        raise ValueError(f"what must be 'report', 'statistics', or 'metadata', got {what!r}")
+    text = block.get("report")
+    if text is None:  # prose wasn't embedded (embedReport=False) — re-render from records
+        from .statistics import _render_report
+
+        text = "\n\n".join(_render_report(r) for r in block.get("statistics", []))
+    print(text)
+    if save:
+        from datetime import datetime
+
+        directory = Path(save) if isinstance(save, str) else Path.cwd()
+        directory.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        (directory / f"dysonsphere_report_{ts}.txt").write_text(text + "\n", encoding="utf-8")
+    return text
+
+
+def load(path: str, *, raw: bool = False, applyTheme: bool = True) -> "_AltairChart | dict":
+    """Rebuild the chart from a dysonsphere-exported Vega-Lite JSON (``_vegalite.json``).
+
+    JSON only — the PNG/SVG carry the metadata block but not the full spec.
+
+    Parameters
+    ----------
+    raw:
+        ``False`` (default) returns a composable Altair object (of the right type). Its
+        theme ``config`` is stripped (Altair's schema rejects a few of dysonsphere's
+        config values), so it comes back unstyled — see ``applyTheme``. ``True`` returns
+        the raw Vega-Lite spec ``dict`` instead, ``config`` intact, which re-renders
+        pixel-identically (e.g. via ``vl_convert``) but is not a composable Altair object.
+    applyTheme:
+        For ``raw=False``: ``True`` (default) re-applies the theme baked into the file via
+        ``ds.theme(**saved_args)`` so the object renders exactly as saved. Like any
+        ``ds.theme()`` call this **replaces the active theme globally**. ``False`` leaves
+        the current theme untouched (the object is styled by whatever theme is active).
+    """
+    p = Path(path)
+    if p.suffix.lower() != ".json":
+        raise ValueError(f"load() needs the Vega-Lite JSON (…_vegalite.json), got {p.suffix!r}")
+    spec = json.loads(p.read_text(encoding="utf-8"))
+    if raw:
+        return spec
+    if applyTheme:
+        theme_args = ((spec.get("usermeta") or {}).get("dysonsphere") or {}).get("theme")
+        if theme_args:
+            from .theme import theme as _theme
+
+            _theme(**theme_args)
+    # Strip config (schema-incompatible) and usermeta before parsing into an Altair object.
+    stripped = {k: v for k, v in spec.items() if k not in ("config", "usermeta")}
+    return cast("_AltairChart", alt.Chart.from_dict(stripped))
 
 
 def _fix_tick_alignment(

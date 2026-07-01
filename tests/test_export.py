@@ -420,6 +420,117 @@ class TestSaveUsermeta:
         assert "statistics" in block and "report" not in block  # structured kept, report dropped
         assert self._svg_report(tmp_path) is None and self._png_report_text(tmp_path) is None
 
+    def test_theme_baked_as_ds_theme_args(self, stats_chart, tmp_path):
+        import dysonsphere as ds
+
+        ds.theme(chartWidth=180, sigFigs=2)
+        save(stats_chart, str(tmp_path / "out"), background=["light"])
+        theme = self._usermeta(tmp_path)["dysonsphere"]["theme"]
+        assert theme["chartWidth"] == 180 and theme["sigFigs"] == 2
+        assert "tickWidth" not in theme  # only _BUILTIN_DEFAULTS keys (valid ds.theme() kwargs)
+
+
+class TestReadLoad:
+    @pytest.fixture
+    def saved(self, tmp_path):
+        import numpy as np
+
+        import dysonsphere as ds
+
+        ds.theme(chartWidth=180, sigFigs=2)
+        rng = np.random.default_rng(0)
+        df = pl.DataFrame({"g": ["A"] * 30 + ["B"] * 30, "v": np.r_[rng.normal(0, 1, 30), rng.normal(2, 1, 30)]})
+        chart = alt.Chart(df).mark_boxplot().encode(x="g:N", y="v:Q") + ds.add_comparisons(
+            df, "g", "v", [("A", "B")], categories=["A", "B"]
+        )
+        ds.save(chart, str(tmp_path / "t"), background=["light"])
+        return tmp_path
+
+    def test_read_report_from_each_format(self, saved):
+        import dysonsphere as ds
+
+        for name in ("t_vegalite.json", "t_light.svg", "t_light.png"):
+            r = ds.read(str(saved / name))  # what="report" default
+            assert isinstance(r, str) and r.startswith("Statistics")
+
+    def test_read_statistics_exact_floats(self, saved):
+        import dysonsphere as ds
+
+        stats = ds.read(str(saved / "t_light.png"), what="statistics")
+        assert isinstance(stats, list)
+        p = stats[0]["comparisons"]["pairs"][0]["pvalue"]
+        assert isinstance(p, float) and 0 < p < 1e-6  # exact, not the floored display value
+
+    def test_read_metadata_has_all_keys(self, saved):
+        import dysonsphere as ds
+
+        m = ds.read(str(saved / "t_light.svg"), what="metadata")
+        assert isinstance(m, dict)
+        assert set(m) == {"provenance", "statistics", "theme", "report"}
+        assert m["theme"]["chartWidth"] == 180
+
+    def test_read_report_rerenders_without_embedded_prose(self, tmp_path):
+        import numpy as np
+
+        import dysonsphere as ds
+
+        df = pl.DataFrame({"g": ["A"] * 20 + ["B"] * 20, "v": np.r_[np.zeros(20), np.ones(20)]})
+        chart = alt.Chart(df).mark_boxplot().encode(x="g:N", y="v:Q") + ds.add_comparisons(
+            df, "g", "v", [("A", "B")], pvalues=[0.01], categories=["A", "B"]
+        )
+        ds.save(chart, str(tmp_path / "u"), embedReport=False, background=["light"])
+        # no embedded prose, but statistics are present → read re-renders the table
+        r = ds.read(str(tmp_path / "u_light.png"))
+        assert isinstance(r, str) and r.startswith("Statistics")
+
+    def test_read_invalid_what_raises(self, saved):
+        import dysonsphere as ds
+
+        with pytest.raises(ValueError, match="what must be"):
+            ds.read(str(saved / "t_vegalite.json"), what="bogus")
+
+    def test_read_unsupported_extension_raises(self, tmp_path):
+        import dysonsphere as ds
+
+        (tmp_path / "x.txt").write_text("hi")
+        with pytest.raises(ValueError, match="supports .png"):
+            ds.read(str(tmp_path / "x.txt"))
+
+    def test_load_returns_composable_object(self, saved):
+        import dysonsphere as ds
+
+        obj = ds.load(str(saved / "t_vegalite.json"))
+        assert isinstance(obj, alt.LayerChart)
+        assert isinstance(obj + alt.Chart().mark_point(), alt.LayerChart)  # composes
+
+    def test_load_reapplies_theme(self, saved):
+        import dysonsphere as ds
+
+        ds.theme(chartWidth=999)  # clobber
+        ds.load(str(saved / "t_vegalite.json"))  # applyTheme=True default
+        assert alt.theme.options["chartWidth"] == 180  # restored from the baked theme
+
+    def test_load_apply_theme_false_leaves_theme(self, saved):
+        import dysonsphere as ds
+
+        ds.theme(chartWidth=999)
+        ds.load(str(saved / "t_vegalite.json"), applyTheme=False)
+        assert alt.theme.options["chartWidth"] == 999  # untouched
+
+    def test_load_raw_returns_spec_dict(self, saved):
+        import dysonsphere as ds
+
+        ds.theme(chartWidth=999)
+        spec = ds.load(str(saved / "t_vegalite.json"), raw=True)
+        assert isinstance(spec, dict) and "config" in spec  # raw spec, theme config intact
+        assert alt.theme.options["chartWidth"] == 999  # globals untouched
+
+    def test_load_requires_json(self, saved):
+        import dysonsphere as ds
+
+        with pytest.raises(ValueError, match="Vega-Lite JSON"):
+            ds.load(str(saved / "t_light.png"))
+
 
 # ── _fix_tick_alignment() ─────────────────────────────────────────────────────
 
