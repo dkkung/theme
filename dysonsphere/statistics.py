@@ -50,6 +50,18 @@ _CORRELATION_METHODS = {
 # rank-based (→ rank-biserial effect size).
 _PARAMETRIC_POSTHOC = {"tukey_hsd", "games_howell", "ttest_ind", "ttest_rel"}
 
+# Human-readable names for pairwise / post-hoc tests — used for the on-plot test label.
+_TEST_DISPLAY = {
+    "mannwhitneyu": "Mann-Whitney U",
+    "ttest_ind": "Student's t-test",
+    "ttest_rel": "Paired t-test",
+    "wilcoxon": "Wilcoxon signed-rank",
+    "tukey_hsd": "Tukey HSD",
+    "dunn": "Dunn's test",
+    "nemenyi": "Nemenyi test",
+    "games_howell": "Games-Howell",
+}
+
 
 # ── Report registry ────────────────────────────────────────────────────────
 # add_comparisons() pushes a structured report *record* (a plain dict — the single
@@ -424,6 +436,7 @@ def _make_record(
     descriptives: list[dict],
     comparisons: list[dict],
     comparison_test: str | None,
+    correction: str | None,
     pvalues_provided: bool,
 ) -> dict:
     """Build the structured report record.
@@ -453,6 +466,7 @@ def _make_record(
         }
     record["comparisons"] = {
         "test": comparison_test,
+        "correction": correction,
         "pairs": [
             {
                 "group1": c["g1"],
@@ -537,9 +551,11 @@ def _render_report(record: dict) -> str:
     pairs = record["comparisons"]["pairs"]
     if pairs:
         name = record["comparisons"]["test"]
+        corr = record["comparisons"].get("correction")
         label = "Post-hoc" if record["kind"] == "omnibus" else "Comparisons"
+        suffix = ", ".join(x for x in (name, corr) if x)
         lines.append("")
-        lines.append(f"{label}{f' ({name})' if name else ''}:")
+        lines.append(f"{label}{f' ({suffix})' if suffix else ''}:")
         pair_width = max(len(f"{p['group1']} vs {p['group2']}") for p in pairs)
         for p in pairs:
             pair = f"{p['group1']} vs {p['group2']}"

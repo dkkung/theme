@@ -240,6 +240,81 @@ class TestAddComparisons:
         assert spec["layer"][0]["layer"][-1]["mark"]["fontSize"] == 9
 
 
+def _text_labels(layer):
+    """Pull rendered text-mark strings out of a chart's named datasets."""
+    datasets = layer.to_dict().get("datasets", {})
+    return [rows[0]["__text"] for rows in datasets.values() if rows and "__text" in rows[0]]
+
+
+class TestTestLabel:
+    @pytest.fixture
+    def tri_df(self):
+        rng = np.random.default_rng(0)
+        return pl.DataFrame({"g": ["A"] * 12 + ["B"] * 12 + ["C"] * 12, "v": rng.normal(0, 1, 36)})
+
+    def test_pairwise_no_label_by_default(self, tri_df):
+        layer = add_comparisons(tri_df, "g", "v", [("A", "B")], pvalues=[0.01], categories=MULTI)
+        assert _text_labels(layer) == []  # auto → hidden for pairwise
+
+    def test_pairwise_label_opt_in(self, tri_df):
+        layer = add_comparisons(tri_df, "g", "v", [("A", "B")], categories=MULTI, testLabelPosition="topRight")
+        assert _text_labels(layer) == ["Mann-Whitney U"]
+
+    def test_pairwise_label_wilcoxon_name(self, tri_df):
+        layer = add_comparisons(
+            tri_df, "g", "v", [("A", "B")], categories=MULTI, test="wilcoxon", testLabelPosition="topRight"
+        )
+        assert _text_labels(layer) == ["Wilcoxon signed-rank"]
+
+    def test_omnibus_label_shown_by_default(self, tri_df):
+        layer = add_comparisons(tri_df, "g", "v", categories=MULTI, test="anova")
+        assert _text_labels(layer)[0].startswith("ANOVA P")  # auto → topLeft for omnibus
+
+    def test_omnibus_label_hidden(self, tri_df):
+        layer = add_comparisons(tri_df, "g", "v", categories=MULTI, test="anova", testLabelPosition=None)
+        assert _text_labels(layer) == []
+
+    def test_omnibus_posthoc_shows_omnibus_not_posthoc(self, tri_df):
+        layer = add_comparisons(tri_df, "g", "v", [("A", "B")], categories=MULTI, test="anova")
+        labels = _text_labels(layer)
+        assert any(t.startswith("ANOVA P") for t in labels) and "Tukey HSD" not in labels
+
+    def test_test_label_override(self, tri_df):
+        layer = add_comparisons(
+            tri_df, "g", "v", categories=MULTI, test="anova", testLabel="my label", testLabelPosition="topLeft"
+        )
+        assert _text_labels(layer) == ["my label"]
+
+    def test_manual_coords_draw_label(self, tri_df):
+        layer = add_comparisons(
+            tri_df, "g", "v", categories=MULTI, test="anova", testLabelPosition=None, testLabelX=1.0, testLabelY=2.0
+        )
+        assert _text_labels(layer)[0].startswith("ANOVA P")
+
+
+class TestCorrectionMetadata:
+    @pytest.fixture
+    def tri_df(self):
+        rng = np.random.default_rng(0)
+        return pl.DataFrame({"g": ["A"] * 12 + ["B"] * 12 + ["C"] * 12, "v": rng.normal(0, 1, 36)})
+
+    def test_correction_recorded(self, tri_df):
+        from dysonsphere import statistics as _st
+
+        _st._drain_reports()
+        add_comparisons(tri_df, "g", "v", [("A", "B"), ("A", "C")], categories=MULTI, correction="holm")
+        rec = _st._drain_reports()[0]
+        assert rec["comparisons"]["correction"] == "holm"
+
+    def test_tukey_correction_stored_none(self, tri_df):
+        from dysonsphere import statistics as _st
+
+        _st._drain_reports()
+        add_comparisons(tri_df, "g", "v", [("A", "B")], categories=MULTI, test="anova", correction="bonferroni")
+        rec = _st._drain_reports()[0]
+        assert rec["comparisons"]["correction"] is None  # tukey carries its own correction
+
+
 # ── Pure statistics module (dysonsphere.statistics) ─────────────────────────
 from dysonsphere import statistics as st  # noqa: E402
 
@@ -348,6 +423,7 @@ class TestReportRegistry:
             descriptives=st._describe_all(_GROUPS, MULTI),
             comparisons=[{"g1": "A", "g2": "C", "pvalue": 0.001, "effectName": "d", "effect": -2.5}],
             comparison_test="tukey_hsd",
+            correction=None,
             pvalues_provided=False,
         )
         assert rec["kind"] == "omnibus" and rec["test"] == "anova"
@@ -367,6 +443,7 @@ class TestReportRegistry:
             descriptives=st._describe_all([_A, np.array([1.0])], ["A", "B"]),  # B has n=1 → sd None
             comparisons=[{"g1": "A", "g2": "B", "pvalue": 0.02, "effectName": "r", "effect": 0.3}],
             comparison_test="mannwhitneyu",
+            correction=None,
             pvalues_provided=False,
         )
         json.dumps(rec)  # must not raise (sd is None, not NaN)
@@ -381,6 +458,7 @@ class TestReportRegistry:
             descriptives=st._describe_all(_GROUPS, MULTI),
             comparisons=[{"g1": "A", "g2": "C", "pvalue": 0.001, "effectName": "d", "effect": -2.5}],
             comparison_test="tukey_hsd",
+            correction=None,
             pvalues_provided=False,
         )
         text = st._render_report(rec)
@@ -426,6 +504,7 @@ class TestReportPValues:
             descriptives=st._describe_all(_GROUPS, MULTI),
             comparisons=[{"g1": "A", "g2": "B", "pvalue": 0.0, "effectName": "r", "effect": 0.5}],
             comparison_test="mannwhitneyu",
+            correction=None,
             pvalues_provided=False,
         )
         assert rec["comparisons"]["pairs"][0]["pvalue"] == sys.float_info.min  # never 0.0
@@ -474,7 +553,7 @@ class TestAddComparisonsOmnibus:
         assert "F(2, 57)" in s and "η²" in s
 
     def test_omnibus_position_none_no_label(self, multi_df):
-        layer = add_comparisons(multi_df, "group", "value", test="kruskal", categories=MULTI, omnibusPosition=None)
+        layer = add_comparisons(multi_df, "group", "value", test="kruskal", categories=MULTI, testLabelPosition=None)
         assert "Kruskal" not in str(layer.to_dict())
 
     def test_omnibus_with_posthoc_brackets(self, multi_df):

@@ -1,11 +1,11 @@
 """
-Generates docs/pvalue_example_light.png — the README preview for add_comparisons.
+Generates docs/pairwise_example_light.png — the README preview for add_comparisons.
 
 Shows labelStyle="p", notation="scientific", and labelStyle="asterisks" on the
-same three-group comparison, plus a reverse-bracket demo on the right.
+same three-group comparison, plus a reverse-bracket + test-name-label demo on the right.
 
 Usage (from project root):
-    uv run python scripts/build/build_pvalue_example.py
+    uv run python scripts/build/build_pairwise_example.py
 """
 
 import tempfile
@@ -120,10 +120,11 @@ third = (
         yStep=-0.5,
         tickHeight=0.15,
         reverse=[("A", "B")],
+        testLabelPosition="topLeft",  # → "Mann-Whitney U" (the default pairwise test)
     )
 ).properties(
     title=alt.TitleParams(
-        ['bracketStyle="bracket"', 'reverse=[("A", "B")]'],
+        ['reverse=[("A", "B")]', 'testLabelPosition="topLeft"'],
         fontSize=fontSize,
         **title_params,
     )
@@ -131,7 +132,7 @@ third = (
 
 chart = alt.hconcat(left, scientific, right, third)
 
-out_png = ROOT / "docs" / "pvalue_example_light.png"
+out_png = ROOT / "docs" / "pairwise_example_light.png"
 with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
     tmp_path = tmp.name
 chart.save(tmp_path)

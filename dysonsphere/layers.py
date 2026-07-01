@@ -1036,11 +1036,13 @@ def add_comparisons(
     reverse: list[tuple[str, str]] | None = None,
     decimals: int = 3,
     notation: str | None = None,
-    omnibusPosition: str | None = "topLeft",
-    omnibusLabel: str | None = None,
+    testLabelPosition: str | None = "auto",
+    testLabel: str | None = None,
     omnibusVerbose: bool = False,
-    omnibusOffsetX: int = 0,
-    omnibusOffsetY: int = 0,
+    testLabelOffsetX: int = 0,
+    testLabelOffsetY: int = 0,
+    testLabelX=None,
+    testLabelY=None,
     report: bool = False,
     save: bool | str = False,
 ) -> alt.LayerChart:
@@ -1056,7 +1058,7 @@ def add_comparisons(
     - **Omnibus** (``'anova'``, ``'kruskal'``, ``'friedman'``,
       ``'alexandergovern'``) — runs one "are *any* groups different?" test and
       places its result as a corner label via ``add_text`` (see
-      ``omnibusPosition``). If ``pairs`` is also given, a post-hoc test (see
+      ``testLabelPosition``). If ``pairs`` is also given, a post-hoc test (see
       ``postHoc``) fills the brackets.
 
     A descriptive + effect-size report is generated on every call and queued for
@@ -1155,20 +1157,27 @@ def add_comparisons(
         rounds to the nearest power of 10 giving ``P ≈ 10⁻²`` — note that
         values within the same decade (e.g. 0.04 and 0.06) map to the same
         label; best for p-values spanning multiple orders of magnitude.
-    omnibusPosition:
+    testLabelPosition:
         Corner preset (an ``add_text`` position, e.g. ``'topLeft'``,
-        ``'bottomRight'``) for the omnibus label. Default ``'topLeft'``. Set to
-        ``None`` to compute the omnibus result for the report/metadata but draw
-        no label. Ignored for pairwise ``test``.
-    omnibusLabel:
-        Override string for the omnibus corner label. ``None`` (default) builds
-        it from the test result.
+        ``'bottomRight'``) for the single test label. Its content adapts: the
+        omnibus **result** (``ANOVA P = 0.003``) for an omnibus ``test``, or the
+        pairwise **test name** (``Mann-Whitney U``) for a pairwise ``test``.
+        Default ``'auto'`` → shown at ``'topLeft'`` for omnibus, hidden for
+        pairwise (opt-in). A preset draws it there; ``None`` hides it (the result
+        is still computed for the report/metadata).
+    testLabel:
+        Override string for the test label. ``None`` (default) builds it from the
+        test result / name.
     omnibusVerbose:
-        ``False`` (default) → terse label ``ANOVA P = 0.003``. ``True`` →
-        ``ANOVA F(2, 57) = 6.34, P = 0.003, η² = 0.18`` (statistic, df, p, and
-        effect size, with the right symbols per test).
-    omnibusOffsetX, omnibusOffsetY:
-        Pixel nudges for the omnibus label, forwarded to ``add_text``.
+        Applies to the omnibus label content: ``False`` (default) → terse
+        ``ANOVA P = 0.003``; ``True`` → ``ANOVA F(2, 57) = 6.34, P = 0.003,
+        η² = 0.18`` (statistic, df, p, and effect size).
+    testLabelOffsetX, testLabelOffsetY:
+        Pixel nudges for the test label, forwarded to ``add_text``.
+    testLabelX, testLabelY:
+        Explicit coordinates for the test label (data values, category names, or
+        ``alt.value(px)``), forwarded to ``add_text`` where they override the
+        preset. ``None`` (default) uses ``testLabelPosition``.
     report:
         ``True`` prints the full descriptive + effect-size report (per-group
         n/mean/sd/median/IQR/range, the omnibus result, and the post-hoc
@@ -1239,6 +1248,7 @@ def add_comparisons(
         _OMNIBUS_TESTS,
         _PARAMETRIC_POSTHOC,
         _POSTHOC_DEFAULTS,
+        _TEST_DISPLAY,
         _describe_all,
         _make_record,
         _pair_effect,
@@ -1268,30 +1278,8 @@ def add_comparisons(
     comparisons: list[dict] = []
     comparison_name: str | None = None
 
-    # --- omnibus corner label ---
     if is_omnibus:
         omnibus_result = _run_omnibus(test, groups, categories)
-        if omnibusPosition is not None:
-            text = (
-                omnibusLabel
-                if omnibusLabel is not None
-                else _omnibus_label(
-                    omnibus_result,
-                    verbose=omnibusVerbose,
-                    labelStyle=labelStyle,
-                    notation=notation,
-                    decimals=decimals,
-                )
-            )
-            annotation_layers.append(
-                add_text(
-                    text,
-                    position=omnibusPosition,
-                    offsetX=omnibusOffsetX,
-                    offsetY=omnibusOffsetY,
-                    fontSize=fontSize if fontSize is not None else alt.theme.options.get("secondaryFontSize", 6),
-                )
-            )
 
     # --- resolve comparison method (a post-hoc for omnibus, the test itself for pairwise) ---
     idx = {c: i for i, c in enumerate(categories)}
@@ -1303,6 +1291,32 @@ def add_comparisons(
     else:
         method = test
     comparison_name = method
+    # tukey_hsd carries its own correction; explicit p-values aren't corrected by us.
+    effective_correction = None if (method is None or method == "tukey_hsd") else correction
+
+    # --- unified test label: the omnibus result, or the pairwise/post-hoc test name ---
+    # Position "auto" (default) → shown for omnibus (topLeft), hidden for pairwise.
+    resolved_pos = ("topLeft" if is_omnibus else None) if testLabelPosition == "auto" else testLabelPosition
+    if resolved_pos is not None or testLabelX is not None or testLabelY is not None:
+        if testLabel is not None:
+            label_text = testLabel
+        elif is_omnibus:
+            label_text = _omnibus_label(
+                omnibus_result, verbose=omnibusVerbose, labelStyle=labelStyle, notation=notation, decimals=decimals
+            )
+        else:
+            label_text = _TEST_DISPLAY.get(test, test)
+        annotation_layers.append(
+            add_text(
+                label_text,
+                testLabelX,
+                testLabelY,
+                position=resolved_pos,
+                offsetX=testLabelOffsetX,
+                offsetY=testLabelOffsetY,
+                fontSize=fontSize if fontSize is not None else alt.theme.options.get("secondaryFontSize", 6),
+            )
+        )
 
     # --- report comparisons ---
     # Omnibus reports ALL pairwise post-hoc comparisons (the full picture), even when
@@ -1423,6 +1437,7 @@ def add_comparisons(
         descriptives=_describe_all(groups, categories),
         comparisons=comparisons,
         comparison_test=comparison_name,
+        correction=effective_correction,
         pvalues_provided=pvalues is not None,
     )
     _push_report(record)
@@ -1437,7 +1452,7 @@ def add_comparisons(
             (directory / f"dysonsphere_report_{ts}.txt").write_text(report_text + "\n", encoding="utf-8")
 
     if not annotation_layers:
-        # omnibusPosition=None with no pairs → report-only; return an invisible layer.
+        # no label and no brackets → report-only; return an invisible layer.
         annotation_layers.append(alt.Chart(alt.Data(values=[{}])).mark_point(opacity=0))
     return cast(alt.LayerChart, alt.layer(*annotation_layers))
 

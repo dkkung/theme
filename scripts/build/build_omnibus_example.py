@@ -1,5 +1,5 @@
 """
-Generates docs/pvalue_omnibus_example_light.png — the README preview for the
+Generates docs/omnibus_example_light.png — the README preview for the
 omnibus mode of add_comparisons.
 
 Two panels, each a boxplot with an omnibus test reported in the corner (via the
@@ -12,7 +12,7 @@ intended left-to-right order, and the y domain is padded so the corner label
 clears the brackets.
 
 Usage (from project root):
-    uv run python scripts/build/build_pvalue_omnibus_example.py
+    uv run python scripts/build/build_omnibus_example.py
 """
 
 import tempfile
@@ -86,7 +86,7 @@ right = (boxplot() + ds.add_comparisons(**common, test="kruskal", labelStyle="as
 
 chart = alt.hconcat(left, right)
 
-out_png = ROOT / "docs" / "pvalue_omnibus_example_light.png"
+out_png = ROOT / "docs" / "omnibus_example_light.png"
 with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
     tmp_path = tmp.name
 chart.save(tmp_path)
