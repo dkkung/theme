@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### New features
+
+- **`add_correlation()`** - annotate a scatter with a correlation coefficient. `kind="pearson"` (default) reports `r`/`r²`/`P` and draws the OLS fit line; `"spearman"` / `"kendall"` report the rank coefficient only. Curated line style (`color`/`strokeWidth`/`strokeDash`/`opacity`) plus a raw `lineStyle` dict passthrough, and `line=False` to suppress. Feeds the same structured metadata as `add_comparisons()`.
+
 ### Deprecated
 
 - **`add_pvalue()` renamed to `add_comparisons()`** to reflect its expanded scope (omnibus tests, post-hoc tests, descriptive + effect-size reports, structured metadata). `add_pvalue()` still works as an alias but emits a `DeprecationWarning` and **will be removed in v2.0** — switch to `add_comparisons()`.

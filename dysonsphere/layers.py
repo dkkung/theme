@@ -1452,3 +1452,175 @@ def add_pvalue(*args, **kwargs) -> alt.LayerChart:
         stacklevel=2,
     )
     return add_comparisons(*args, **kwargs)
+
+
+# Correlation
+
+
+def _correlation_label(result: dict, *, verbose: bool, decimals: int, notation: str | None) -> str:
+    """Build the corner-readout string from a correlation result."""
+    parts = [f"{result['symbol']} = {result['coefficient']:.2f}"]
+    if result["rSquared"] is not None:
+        parts.append(f"r² = {result['rSquared']:.2f}")
+    parts.append(_format_pvalue(result["pvalue"], decimals=decimals, notation=notation))
+    label = ", ".join(parts)
+    if verbose and result["slope"] is not None:
+        sign = "+" if result["intercept"] >= 0 else "-"
+        label += f", y = {result['slope']:.2f}x {sign} {abs(result['intercept']):.2f}"
+    return label
+
+
+def add_correlation(
+    df: pl.DataFrame | Any,
+    xCol: str,
+    yCol: str,
+    *,
+    kind: str = "pearson",
+    line: bool = True,
+    position: str | None = "topLeft",
+    label: str | None = None,
+    verbose: bool = False,
+    offsetX: int = 0,
+    offsetY: int = 0,
+    fontSize: int | None = None,
+    decimals: int = 3,
+    notation: str | None = None,
+    color: str | None = None,
+    strokeWidth: float | None = None,
+    strokeDash: bool | list[int] | None = None,
+    opacity: float = 1.0,
+    lineStyle: dict | None = None,
+    report: bool = False,
+    save: bool | str = False,
+) -> alt.LayerChart:
+    """
+    Annotate a scatter with a correlation coefficient (and an OLS fit line for Pearson).
+
+    Reports the coefficient + p-value as a corner label, and — for
+    ``kind="pearson"`` only — draws the ordinary-least-squares regression line.
+    A structured record (``kind="correlation"``) is queued for the export
+    metadata (see ``ds.save``), exactly like ``add_comparisons``.
+
+    Combine with your scatter using ``+``:  ``chart + add_correlation(...)``.
+
+    Parameters
+    ----------
+    df:
+        DataFrame containing the data (polars or pandas).
+    xCol, yCol:
+        Column names for the two **continuous** variables.
+    kind:
+        ``'pearson'`` (default) — linear correlation ``r`` + ``r²`` + slope/intercept,
+        with an OLS line. ``'spearman'`` — rank correlation ``ρ``. ``'kendall'`` —
+        rank correlation ``τ``. The rank kinds report the coefficient only (no ``r²``,
+        no line — a straight line isn't their model).
+    line:
+        Draw the OLS fit line. Default ``True``. Only applies to ``kind="pearson"``
+        (a no-op for the rank kinds). Set ``False`` to suppress it and, e.g., compose
+        your own line from the returned/recorded slope and intercept.
+    position:
+        Corner preset (an ``add_text`` position, e.g. ``'topLeft'``) for the readout.
+        Default ``'topLeft'``. ``None`` computes the result for the report/metadata but
+        draws no label.
+    label:
+        Override string for the corner readout. ``None`` builds it from the result.
+    verbose:
+        ``False`` (default) → ``r = 0.87, r² = 0.76, P < 0.001``. ``True`` appends the
+        fit equation ``, y = 0.84x + 0.27`` (Pearson only).
+    offsetX, offsetY:
+        Pixel nudges for the readout, forwarded to ``add_text``.
+    fontSize:
+        Font size of the readout. Defaults to ``6``.
+    decimals, notation:
+        Control the p-value format in the readout, as in ``add_comparisons``.
+    color, strokeWidth, strokeDash, opacity:
+        Curated style for the fit line (same four knobs as ``add_rule``). The line has
+        its own sensible defaults (solid, theme stroke colour) — it does *not* inherit
+        the theme's ``mark_line`` state.
+    lineStyle:
+        A dict of raw ``mark_line`` properties merged in last, so any Vega-Lite line
+        property is reachable (e.g. ``{"interpolate": "monotone", "strokeCap": "round"}``).
+        Keys here **override** the curated ``color``/``strokeWidth``/etc. above.
+    report:
+        ``True`` prints the report (coefficient, r², p, fit, n) to stdout. Default
+        ``False``. The record is queued for export metadata regardless.
+    save:
+        ``True`` writes the report to ``dysonsphere_report_<timestamp>.txt`` in the cwd;
+        a string writes it to that directory.
+
+    Examples
+    --------
+    ::
+
+        scatter = alt.Chart(df).mark_point().encode(x="height:Q", y="weight:Q")
+        scatter + ds.add_correlation(df, "height", "weight")                 # r + r² + OLS line
+        scatter + ds.add_correlation(df, "height", "weight", kind="spearman")  # ρ, no line
+        scatter + ds.add_correlation(
+            df, "height", "weight",
+            color="#c0392b", lineStyle={"strokeDash": [4, 2]},
+        )
+    """
+    from datetime import datetime
+    from pathlib import Path
+
+    from .statistics import _make_correlation_record, _push_report, _render_report, _run_correlation
+    from .utils import ensure_polars
+
+    df = ensure_polars(df)
+    x = df[xCol].cast(pl.Float64).to_numpy()
+    y = df[yCol].cast(pl.Float64).to_numpy()
+    result = _run_correlation(kind, x, y)
+
+    layers: list = []
+
+    # OLS fit line — Pearson only (result["slope"] is None for rank kinds).
+    if line and result["slope"] is not None:
+        x0, x1 = float(x.min()), float(x.max())
+        slope, intercept = result["slope"], result["intercept"]
+        fit_df = pl.DataFrame({"_x": [x0, x1], "_y": [slope * x0 + intercept, slope * x1 + intercept]})
+        mark_kwargs: dict = {
+            "color": alt.theme.options.get("markStroke", "black"),
+            "strokeWidth": (alt.theme.options.get("axisWidth", 0.5) or 0.5) * 2,
+        }
+        mark_kwargs.update(_rule_mark_kwargs(color, strokeWidth, strokeDash, opacity))
+        if lineStyle:
+            mark_kwargs.update(lineStyle)
+        # Plain x:Q/y:Q with no title/axis override: the fit line shares the main chart's
+        # scale, and because the base chart is the first layer, its axis (titles, ticks)
+        # wins the shared-axis resolution.  (Setting title=None nulls the base title;
+        # axis=None suppresses the axis entirely — both wrong here.)
+        layers.append(alt.Chart(fit_df).mark_line(**mark_kwargs).encode(x=alt.X("_x:Q"), y=alt.Y("_y:Q")))
+
+    # Corner readout.
+    if position is not None:
+        text = (
+            label
+            if label is not None
+            else _correlation_label(result, verbose=verbose, decimals=decimals, notation=notation)
+        )
+        layers.append(
+            add_text(
+                text,
+                position=position,
+                offsetX=offsetX,
+                offsetY=offsetY,
+                fontSize=fontSize if fontSize is not None else 6,
+            )
+        )
+
+    # Structured record → export metadata; printed/written on request.
+    record = _make_correlation_record(result, xCol, yCol)
+    _push_report(record)
+    if report or save:
+        report_text = _render_report(record)
+        if report:
+            print(report_text)
+        if save:
+            directory = Path(save) if isinstance(save, str) else Path.cwd()
+            directory.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            (directory / f"dysonsphere_report_{ts}.txt").write_text(report_text + "\n", encoding="utf-8")
+
+    if not layers:
+        layers.append(alt.Chart(alt.Data(values=[{}])).mark_point(opacity=0))
+    return cast(alt.LayerChart, alt.layer(*layers))

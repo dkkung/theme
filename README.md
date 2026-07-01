@@ -74,6 +74,7 @@ ds.save(chart, "plots/myplot")
     - [Violin](#violin)
   - [Statistical annotations](#statistical-annotations)
     - [Adding p-value annotations](#adding-p-value-annotations)
+    - [Correlation](#correlation)
   - [Multilabels](#multilabels)
     - [Sample sizes](#sample-sizes)
     - [Category labels](#category-labels)
@@ -633,6 +634,50 @@ The supported post-hocs are Tukey HSD and Dunnett (via `scipy`) plus **Dunn, Nem
 | `omnibusOffsetX`, `omnibusOffsetY` | `0` | Pixel nudges for the omnibus label |
 | `report` | `False` | `True` prints the full descriptive + effect-size report to stdout. The report is queued for `ds.save()` metadata regardless |
 | `save` | `False` | `True` writes the report to `dysonsphere_report_<timestamp>.txt` in the cwd; a string writes to that directory |
+
+#### Correlation
+
+`add_correlation()` annotates a **scatter** (two continuous variables) with a correlation coefficient, and — for `kind="pearson"` only — draws the OLS regression line. Like `add_comparisons()`, it reports its result as a corner label and queues a structured record for `ds.save()` metadata. Compose it with `+`.
+
+```python
+scatter = alt.Chart(df).mark_point().encode(x="height:Q", y="weight:Q")
+
+scatter + ds.add_correlation(df, "height", "weight")                    # r + r² + OLS line
+scatter + ds.add_correlation(df, "height", "weight", kind="spearman")   # ρ only, no line
+scatter + ds.add_correlation(df, "height", "weight", verbose=True)      # adds the fit equation
+scatter + ds.add_correlation(
+    df, "height", "weight",
+    color="#c0392b", strokeWidth=1.2,                                   # curated line style
+    lineStyle={"strokeDash": [4, 2]},                                   # raw mark_line passthrough
+)
+```
+
+![correlation example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/correlation_example_light.png)
+
+The three `kind`s report different coefficients; only Pearson has a straight-line model, so `line=` is a no-op for the rank kinds:
+
+| `kind` | reports | line |
+|---|---|---|
+| `"pearson"` *(default)* | `r`, `r²`, `P` (+ slope/intercept) | OLS line |
+| `"spearman"` | `ρ`, `P` | none |
+| `"kendall"` | `τ`, `P` | none |
+
+| Parameter | Default | Description |
+|---|---|---|
+| `df` | required | Polars or pandas DataFrame |
+| `xCol`, `yCol` | required | Column names for the two continuous variables |
+| `kind` | `"pearson"` | `"pearson"`, `"spearman"`, or `"kendall"` |
+| `line` | `True` | Draw the OLS fit line (Pearson only; no-op for rank kinds). `False` to suppress and, e.g., compose your own from the recorded slope/intercept |
+| `position` | `"topLeft"` | Corner preset (an `add_text` position) for the readout. `None` computes the result for the metadata but draws no label |
+| `label` | `None` | Override string for the corner readout |
+| `verbose` | `False` | `False` → `r = 0.85, r² = 0.72, P < 0.001`; `True` appends the fit equation `, y = 0.84x + 0.27` |
+| `offsetX`, `offsetY` | `0` | Pixel nudges for the readout |
+| `fontSize` | `6` | Font size of the readout |
+| `decimals`, `notation` | `3`, `None` | Control the p-value format in the readout (as in `add_comparisons`) |
+| `color`, `strokeWidth`, `strokeDash`, `opacity` | theme | Curated style for the fit line (the same four knobs as `add_rule`); the line has its own solid default, not the theme's `mark_line` state |
+| `lineStyle` | `None` | A dict of raw `mark_line` properties merged in last, so any Vega-Lite line property is reachable. Keys here **override** the curated `color`/`strokeWidth`/etc. above |
+| `report` | `False` | `True` prints the report (coefficient, r², P, fit, n) to stdout; queued for `ds.save()` metadata regardless |
+| `save` | `False` | `True` writes the report to a `.txt` in the cwd; a string writes to that directory |
 
 ### Multilabels
 

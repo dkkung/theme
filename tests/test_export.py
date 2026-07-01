@@ -323,6 +323,20 @@ class TestSaveUsermeta:
         assert isinstance(rec["omnibus"]["pvalue"], float)  # real number, not text
         assert len(rec["comparisons"]["pairs"]) == 3
 
+    def test_correlation_record_embedded(self, tmp_path):
+        import numpy as np
+
+        import dysonsphere as ds
+
+        rng = np.random.default_rng(0)
+        x = rng.uniform(0, 10, 40)
+        df = pl.DataFrame({"x": x, "y": 0.9 * x + rng.normal(0, 1, 40)})
+        chart = alt.Chart(df).mark_point().encode(x="x:Q", y="y:Q") + ds.add_correlation(df, "x", "y")
+        save(chart, str(tmp_path / "out"), background=["light"])
+        rec = self._usermeta(tmp_path)["dysonsphere"]["statistics"][0]
+        assert rec["kind"] == "correlation" and rec["method"] == "pearson"
+        assert isinstance(rec["coefficient"]["value"], float) and rec["fit"]["slope"] is not None
+
     def test_no_statistics_key_without_add_comparisons(self, simple_chart, tmp_path):
         save(simple_chart, str(tmp_path / "out"), background=["light"])
         assert "statistics" not in self._usermeta(tmp_path)["dysonsphere"]

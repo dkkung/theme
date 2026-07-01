@@ -3,7 +3,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from dysonsphere.layers import _format_asterisks, _format_pvalue, add_comparisons
+from dysonsphere.layers import _format_asterisks, _format_pvalue, add_comparisons, add_correlation
 from dysonsphere.theme import theme
 
 CATEGORIES = ["A", "B"]
@@ -516,3 +516,92 @@ class TestAddComparisonsOmnibus:
         # kruskal default post-hoc is dunn; just ensure it runs and brackets build
         layer = add_comparisons(multi_df, "group", "value", pairs=[("A", "C")], test="kruskal", categories=MULTI)
         assert isinstance(layer, alt.LayerChart)
+
+
+# ── Correlation (dysonsphere.statistics + add_correlation) ───────────────────
+_CX = np.array([1.0, 2, 3, 4, 5, 6, 7, 8])
+_CY = np.array([2.1, 3.9, 6.2, 7.8, 10.1, 12.2, 13.8, 16.3])  # strong positive linear
+
+
+class TestCorrelationStats:
+    def test_pearson_matches_scipy(self):
+        from scipy import stats as sp
+
+        r = st._run_correlation("pearson", _CX, _CY)
+        assert r["coefficient"] == pytest.approx(float(sp.pearsonr(_CX, _CY).statistic), abs=1e-9)
+        assert r["rSquared"] == pytest.approx(r["coefficient"] ** 2)
+        assert r["slope"] is not None and r["intercept"] is not None
+
+    def test_spearman_no_line(self):
+        r = st._run_correlation("spearman", _CX, _CY)
+        assert r["symbol"] == "ρ" and r["rSquared"] is None and r["slope"] is None
+
+    def test_kendall(self):
+        r = st._run_correlation("kendall", _CX, _CY)
+        assert r["symbol"] == "τ" and r["rSquared"] is None
+
+    def test_unknown_kind(self):
+        with pytest.raises(ValueError, match="kind must be"):
+            st._run_correlation("nope", _CX, _CY)
+
+    def test_record_shape_and_clamp(self):
+        rec = st._make_correlation_record(st._run_correlation("pearson", _CX, _CY), "h", "w")
+        assert rec["kind"] == "correlation" and rec["method"] == "pearson"
+        assert rec["coefficient"]["symbol"] == "r" and rec["coefficient"]["name"] == "pearson_r"
+        assert rec["fit"]["slope"] is not None
+        import json
+
+        json.dumps(rec)  # JSON-safe
+
+    def test_render_pearson_report(self):
+        rec = st._make_correlation_record(st._run_correlation("pearson", _CX, _CY), "h", "w")
+        text = st._render_report(rec)
+        assert text.startswith("Statistics | Correlation | Pearson")
+        assert "r² = " in text and "Fit: y = " in text and "(h vs w)" in text
+
+    def test_render_negative_intercept_sign(self):
+        # y = 2x - 5  -> intercept negative, must render "- 5.000" not "+ -5.000"
+        x = np.array([1.0, 2, 3, 4])
+        y = 2 * x - 5
+        text = st._render_report(st._make_correlation_record(st._run_correlation("pearson", x, y), "x", "y"))
+        assert "x - " in text and "+ -" not in text
+
+
+class TestAddCorrelation:
+    @pytest.fixture
+    def scatter_df(self):
+        rng = np.random.default_rng(0)
+        x = rng.uniform(0, 10, 60)
+        return pl.DataFrame({"x": x, "y": 0.9 * x + rng.normal(0, 1, 60)})
+
+    def test_pearson_has_line_and_label(self, scatter_df):
+        layer = add_correlation(scatter_df, "x", "y")
+        assert isinstance(layer, alt.LayerChart)
+        assert len(layer.to_dict()["layer"]) == 2  # line + readout
+
+    def test_spearman_no_line(self, scatter_df):
+        layer = add_correlation(scatter_df, "x", "y", kind="spearman")
+        assert len(layer.to_dict()["layer"]) == 1  # readout only, no line
+
+    def test_line_false_suppresses_line(self, scatter_df):
+        layer = add_correlation(scatter_df, "x", "y", line=False)
+        assert len(layer.to_dict()["layer"]) == 1
+
+    def test_position_none_no_label(self, scatter_df):
+        layer = add_correlation(scatter_df, "x", "y", position=None)
+        assert len(layer.to_dict()["layer"]) == 1  # line only
+
+    def test_linestyle_overrides_curated(self, scatter_df):
+        spec = add_correlation(scatter_df, "x", "y", color="red", lineStyle={"color": "blue"}).to_dict()
+        marks = [lyr["mark"] for lyr in spec["layer"] if isinstance(lyr.get("mark"), dict)]
+        line_mark = next(m for m in marks if m.get("type") == "line")
+        assert line_mark["color"] == "blue"  # lineStyle wins
+
+    def test_record_queued(self, scatter_df):
+        st._REPORTS.clear()
+        add_correlation(scatter_df, "x", "y")
+        assert len(st._REPORTS) == 1 and st._REPORTS[0]["kind"] == "correlation"
+
+    def test_report_prints(self, scatter_df, capsys):
+        add_correlation(scatter_df, "x", "y", report=True)
+        assert "Correlation | Pearson" in capsys.readouterr().out

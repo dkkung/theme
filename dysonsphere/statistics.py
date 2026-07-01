@@ -39,6 +39,13 @@ _POSTHOC_DEFAULTS = {
 # Pairwise tests usable directly (existing behaviour) or as a post-hoc fallback.
 _PAIRWISE_TESTS = {"mannwhitneyu", "ttest_ind", "ttest_rel", "wilcoxon"}
 
+# Correlation methods (add_correlation). Only "pearson" implies a straight line.
+_CORRELATION_METHODS = {
+    "pearson": ("Pearson", "r", "pearson_r"),
+    "spearman": ("Spearman", "ρ", "spearman_rho"),
+    "kendall": ("Kendall", "τ", "kendall_tau"),
+}
+
 # Post-hoc tests treated as parametric (→ Cohen's d effect size); the rest are
 # rank-based (→ rank-biserial effect size).
 _PARAMETRIC_POSTHOC = {"tukey_hsd", "games_howell", "ttest_ind", "ttest_rel"}
@@ -182,6 +189,61 @@ def _run_omnibus(test: str, groups: list[np.ndarray], labels: list) -> _OmnibusR
     res = _stats.alexandergovern(*groups)
     stat, pval = float(res.statistic), float(res.pvalue)
     return _OmnibusResult(test, name, stat, pval, "A", (k - 1,), "η²", _eta_squared(groups), descriptives)
+
+
+# ── Correlation ────────────────────────────────────────────────────────────
+def _run_correlation(kind: str, x: np.ndarray, y: np.ndarray) -> dict:
+    """Compute a correlation coefficient (+ OLS fit for Pearson) between two continuous vars."""
+    from scipy import stats as _stats
+
+    if kind not in _CORRELATION_METHODS:
+        raise ValueError(f"kind must be one of {sorted(_CORRELATION_METHODS)}, got {kind!r}")
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    _, symbol, machine = _CORRELATION_METHODS[kind]
+
+    if kind == "pearson":
+        res = _stats.linregress(x, y)
+        coef = float(res.rvalue)
+        return {
+            "method": kind,
+            "symbol": symbol,
+            "machine": machine,
+            "coefficient": coef,
+            "rSquared": coef * coef,
+            "pvalue": float(res.pvalue),
+            "slope": float(res.slope),
+            "intercept": float(res.intercept),
+            "n": int(x.size),
+        }
+
+    res = _stats.spearmanr(x, y) if kind == "spearman" else _stats.kendalltau(x, y)
+    return {
+        "method": kind,
+        "symbol": symbol,
+        "machine": machine,
+        "coefficient": float(res.statistic),
+        "rSquared": None,  # not meaningful for rank correlations
+        "pvalue": float(res.pvalue),
+        "slope": None,
+        "intercept": None,
+        "n": int(x.size),
+    }
+
+
+def _make_correlation_record(result: dict, xCol: str, yCol: str) -> dict:
+    """Structured record for a correlation (the single source of truth, → usermeta)."""
+    return {
+        "kind": "correlation",
+        "method": result["method"],
+        "x": xCol,
+        "y": yCol,
+        "n": result["n"],
+        "coefficient": {"name": result["machine"], "symbol": result["symbol"], "value": result["coefficient"]},
+        "rSquared": result["rSquared"],
+        "pvalue": _clamp_p(result["pvalue"]),
+        "fit": None if result["slope"] is None else {"slope": result["slope"], "intercept": result["intercept"]},
+    }
 
 
 # ── Post-hoc tests (hand-rolled) ───────────────────────────────────────────
@@ -423,8 +485,28 @@ def _fmt_p(p: float) -> str:
     return f"= {p:.3g}"
 
 
+def _render_correlation(record: dict) -> str:
+    method = _CORRELATION_METHODS[record["method"]][0]
+    title = f"Statistics | Correlation | {method}"
+    lines: list[str] = [title, "─" * len(title), ""]
+    c = record["coefficient"]
+    parts = [f"{c['symbol']} = {_fmt(c['value'])}"]
+    if record["rSquared"] is not None:
+        parts.append(f"r² = {_fmt(record['rSquared'])}")
+    parts.append(f"P {_fmt_p(record['pvalue'])}")
+    lines.append(", ".join(parts))
+    if record["fit"] is not None:
+        f = record["fit"]
+        sign = "+" if f["intercept"] >= 0 else "-"
+        lines.append(f"Fit: y = {_fmt(f['slope'])}x {sign} {_fmt(abs(f['intercept']))}")
+    lines.append(f"n = {record['n']}  ({record['x']} vs {record['y']})")
+    return "\n".join(lines)
+
+
 def _render_report(record: dict) -> str:
     """Render the plain-text descriptive + effect-size report from a record dict."""
+    if record["kind"] == "correlation":
+        return _render_correlation(record)
     if record["kind"] == "omnibus":
         title = f"Statistics | Omnibus | {record['omnibus']['name']}"
     elif record["test"] is None:
