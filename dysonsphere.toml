@@ -28,6 +28,8 @@ transparentBackground = true
 # Custom styles - add your own style sections below
 
 [my_style]  # Rename to your desired style name
+# palette = "blues2"          # master scheme for all scale types, or override per type:
+# categoryPalette = "reds2"   # (also divergingPalette, heatmapPalette, ordinalPalette, rampPalette)
 
 # Custom palettes — lists of hex strings, available via ds.palette("name")
 # or ds.theme(palette="name"). dysonsphere palettes are typically 12 stops
