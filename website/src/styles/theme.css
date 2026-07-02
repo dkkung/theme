@@ -28,3 +28,15 @@
 .vega-embed .chart-wrapper {
   zoom: var(--ds-chart-zoom);
 }
+
+/* Reveal the chart's export menu only on hover/focus (or while open), not at rest.
+   !important because vega-embed injects its own summary styles at runtime. */
+.vega-embed summary {
+  opacity: 0 !important;
+  transition: opacity 0.15s ease;
+}
+.vega-embed:hover summary,
+.vega-embed:focus-within summary,
+.vega-embed details[open] summary {
+  opacity: 1 !important;
+}
