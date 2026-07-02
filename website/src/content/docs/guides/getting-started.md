@@ -46,5 +46,5 @@ ds.save(chart, "figure")   # writes figure.svg + figure.json by default
 
 ## Try it live
 
-Want to experiment without installing anything? The [live playground](/playground.html) runs
+Want to experiment without installing anything? The [live playground](/playground/) runs
 dysonsphere in your browser via WebAssembly - edit the code and see the chart update.

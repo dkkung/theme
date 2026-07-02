@@ -1,0 +1,206 @@
+---
+// Interactive dysonsphere playground: runs dysonsphere in the browser via Pyodide (WebAssembly)
+// and renders the result live with vega-embed. Loaded as an island on the /playground page.
+---
+
+<div id="ds-playground" class="pg">
+	<div class="pg__panel">
+		<div class="pg__label">Python</div>
+		<textarea id="pg-code" spellcheck="false"></textarea>
+		<div class="pg__toolbar">
+			<button id="pg-run" disabled>Run</button>
+			<span id="pg-status">Loading Python runtime…</span>
+		</div>
+		<p class="pg__hint">
+			Assign your chart to a variable named <code>chart</code>. Use the actions menu on the chart to
+			export SVG, PNG, or JSON.
+		</p>
+	</div>
+	<div class="pg__panel">
+		<div class="pg__label">Chart</div>
+		<div id="pg-chart" class="pg__chart"></div>
+	</div>
+</div>
+
+<script>
+	import vegaEmbed from 'vega-embed';
+
+	const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v314.0.2/full/';
+
+	const DEFAULT_CODE = `import polars as pl
+import altair as alt
+import dysonsphere as ds
+
+ds.theme(palette="blues")
+
+df = pl.DataFrame({
+    "group": ["A", "B", "C", "D"],
+    "value": [3.0, 5.0, 2.0, 6.0],
+})
+
+chart = (
+    alt.Chart(df)
+    .mark_bar()
+    .encode(
+        x=alt.X("group:N"),
+        y=alt.Y("value:Q"),
+        color=alt.Color("group:N", legend=None),
+    )
+)
+`;
+
+	async function initPlayground() {
+		const root = document.getElementById('ds-playground');
+		if (!root || root.dataset.booted) return;
+		root.dataset.booted = '1';
+
+		const statusEl = document.getElementById('pg-status') as HTMLElement;
+		const runBtn = document.getElementById('pg-run') as HTMLButtonElement;
+		const codeEl = document.getElementById('pg-code') as HTMLTextAreaElement;
+		const chartEl = document.getElementById('pg-chart') as HTMLElement;
+		codeEl.value = DEFAULT_CODE;
+
+		const setStatus = (msg: string, kind = '') => {
+			statusEl.textContent = msg;
+			statusEl.dataset.kind = kind;
+		};
+
+		let runFn: ((code: string) => string) | null = null;
+
+		async function run() {
+			if (!runFn) return;
+			setStatus('Running…');
+			runBtn.disabled = true;
+			try {
+				const spec = JSON.parse(runFn(codeEl.value));
+				await vegaEmbed(chartEl, spec, { actions: true, renderer: 'svg' });
+				setStatus('Rendered.', 'ok');
+			} catch (e) {
+				setStatus('Error - see console.', 'err');
+				console.error(e);
+			} finally {
+				runBtn.disabled = false;
+			}
+		}
+
+		try {
+			setStatus('Loading Pyodide (WebAssembly runtime)…');
+			const { loadPyodide } = await import(/* @vite-ignore */ PYODIDE_URL + 'pyodide.mjs');
+			const pyodide = await loadPyodide({ indexURL: PYODIDE_URL });
+
+			setStatus('Installing dysonsphere + polars + scipy (first load, tens of MB)…');
+			await pyodide.loadPackage('micropip');
+			const micropip = pyodide.pyimport('micropip');
+			await micropip.install('dysonsphere');
+
+			await pyodide.runPythonAsync(`
+import json
+def _run(code):
+    ns = {}
+    exec(code, ns)
+    ch = ns.get("chart")
+    if ch is None:
+        raise RuntimeError("Define a variable named 'chart' (a dysonsphere/Altair chart).")
+    return json.dumps(ch.to_dict())
+`);
+			runFn = pyodide.globals.get('_run');
+
+			setStatus('Ready.', 'ok');
+			runBtn.disabled = false;
+			runBtn.addEventListener('click', run);
+			await run();
+		} catch (e) {
+			setStatus('Boot failed - see console.', 'err');
+			console.error(e);
+		}
+	}
+
+	initPlayground();
+	// Starlight navigates with view transitions; boot when arriving on the playground page.
+	document.addEventListener('astro:page-load', initPlayground);
+</script>
+
+<style>
+	.pg {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+		align-items: start;
+		margin-top: 1.5rem;
+	}
+	@media (max-width: 800px) {
+		.pg {
+			grid-template-columns: 1fr;
+		}
+	}
+	.pg__panel {
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.5rem;
+		overflow: hidden;
+		background: var(--sl-color-bg);
+	}
+	.pg__label {
+		padding: 0.5rem 0.75rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--sl-color-gray-3);
+		border-bottom: 1px solid var(--sl-color-gray-5);
+	}
+	#pg-code {
+		width: 100%;
+		min-height: 22rem;
+		border: 0;
+		padding: 0.75rem;
+		font-family: var(--sl-font-mono, monospace);
+		font-size: 0.8rem;
+		line-height: 1.5;
+		resize: vertical;
+		color: var(--sl-color-text);
+		background: var(--sl-color-bg);
+		outline: none;
+	}
+	.pg__toolbar {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.6rem 0.75rem;
+		border-top: 1px solid var(--sl-color-gray-5);
+	}
+	#pg-run {
+		background: var(--sl-color-accent);
+		color: var(--sl-color-white);
+		border: 0;
+		border-radius: 0.375rem;
+		padding: 0.4rem 1rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	#pg-run:disabled {
+		opacity: 0.55;
+		cursor: default;
+	}
+	#pg-status {
+		font-size: 0.8rem;
+		color: var(--sl-color-gray-3);
+	}
+	#pg-status[data-kind='ok'] {
+		color: var(--sl-color-green, #2f7d4f);
+	}
+	#pg-status[data-kind='err'] {
+		color: var(--sl-color-red, #b23b3b);
+	}
+	.pg__hint {
+		margin: 0;
+		padding: 0 0.75rem 0.75rem;
+		font-size: 0.75rem;
+		color: var(--sl-color-gray-3);
+	}
+	.pg__chart {
+		padding: 1rem;
+		background: #fff;
+		min-height: 22rem;
+		overflow: auto;
+	}
+</style>
