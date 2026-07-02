@@ -4,6 +4,8 @@ from typing import Any, cast
 import altair as alt
 import polars as pl
 
+from .utils import _internal_data
+
 # Reference lines
 
 
@@ -122,7 +124,7 @@ def add_rule(
         # labelAlign: where along the line (x-axis): "left", "center", "right".
         # labelPosition: which side of the line (y-axis): "top", "bottom".
         df = pl.DataFrame({"__v": [float(v) for v in vals]})
-        rule = alt.Chart(df).mark_rule(**mark_kwargs).encode(y=alt.Y("__v:Q", title=None))
+        rule = alt.Chart(_internal_data(df)).mark_rule(**mark_kwargs).encode(y=alt.Y("__v:Q", title=None))
         if label is None:
             return rule
 
@@ -153,7 +155,7 @@ def add_rule(
         if color is not None:
             text_kwargs["color"] = color
         text = (
-            alt.Chart(ldf)
+            alt.Chart(_internal_data(ldf))
             .mark_text(**text_kwargs)
             .encode(
                 y=alt.Y("__v:Q", title=None),
@@ -168,7 +170,7 @@ def add_rule(
         # labelAlign: where along the line (y-axis): "top", "center", "bottom".
         # labelPosition: which side of the line (x-axis): "right", "left".
         df = pl.DataFrame({"__v": [float(v) for v in vals]})
-        rule = alt.Chart(df).mark_rule(**mark_kwargs).encode(x=alt.X("__v:Q", title=None))
+        rule = alt.Chart(_internal_data(df)).mark_rule(**mark_kwargs).encode(x=alt.X("__v:Q", title=None))
         if label is None:
             return rule
 
@@ -203,7 +205,7 @@ def add_rule(
         if color is not None:
             text_kwargs["color"] = color
         text = (
-            alt.Chart(ldf)
+            alt.Chart(_internal_data(ldf))
             .mark_text(**text_kwargs)
             .encode(
                 x=alt.X("__v:Q", title=None),
@@ -473,7 +475,7 @@ def add_text(
     else:
         enc["y"] = alt.Y("__y:N", title=None)
 
-    return alt.Chart(df).mark_text(**mark_kwargs).encode(**enc)
+    return alt.Chart(_internal_data(df)).mark_text(**mark_kwargs).encode(**enc)
 
 
 # Background shading
@@ -678,7 +680,7 @@ def add_shade(
                     enc["y2"] = alt.Y2("__y_end:Q")
 
                 df = pl.DataFrame(data_fields) if data_fields else dummy_df
-                layers.append(alt.Chart(df).mark_rect(**mark_kwargs, color=color).encode(**enc))
+                layers.append(alt.Chart(_internal_data(df)).mark_rect(**mark_kwargs, color=color).encode(**enc))
 
         elif len(positions) > 0 and isinstance(positions[0][0], str):
             # String tuples: category names on a nominal axis.
@@ -707,7 +709,7 @@ def add_shade(
                     if axis == "y"
                     else {"x": alt.value(lo), "x2": alt.value(hi)}
                 )
-                layers.append(alt.Chart(dummy_df).mark_rect(**mark_kwargs, color=color).encode(**enc))
+                layers.append(alt.Chart(_internal_data(dummy_df)).mark_rect(**mark_kwargs, color=color).encode(**enc))
 
         else:
             # Numeric tuples: data-space coordinates on a quantitative axis.
@@ -717,13 +719,13 @@ def add_shade(
                 pos_df = pl.DataFrame({"__start": [float(start)], "__end": [float(end)]})
                 if axis == "y":
                     chart = (
-                        alt.Chart(pos_df)
+                        alt.Chart(_internal_data(pos_df))
                         .mark_rect(**mark_kwargs, color=color)
                         .encode(y=alt.Y("__start:Q"), y2=alt.Y2("__end:Q"))
                     )
                 else:
                     chart = (
-                        alt.Chart(pos_df)
+                        alt.Chart(_internal_data(pos_df))
                         .mark_rect(**mark_kwargs, color=color)
                         .encode(x=alt.X("__start:Q"), x2=alt.X2("__end:Q"))
                     )
@@ -760,7 +762,7 @@ def add_shade(
         left = 0 if (flush and i == 0) else step * (band_padding + i)
         right = chart_width if (flush and j == n) else step * (band_padding + j)
         run_layers.append(
-            alt.Chart(dummy_df)
+            alt.Chart(_internal_data(dummy_df))
             .mark_rect(**mark_kwargs, color=color_map[i])
             .encode(x=alt.value(left), x2=alt.value(right))
         )
@@ -916,7 +918,7 @@ def _pvalue_layer(
     tick_y2 = y + tick_height if reverse else y - tick_height
 
     bar = (
-        alt.Chart(alt.Data(values=[{"x": group1, "x2": group2, "y": y}]))
+        alt.Chart(_internal_data([{"x": group1, "x2": group2, "y": y}]))
         .mark_rule(**_rule_kwargs)
         .encode(
             x=alt.X("x:N"),
@@ -935,7 +937,7 @@ def _pvalue_layer(
     step = chartWidth / (n + 2 * band_padding)
     x_mid_px = step * (2 * band_padding + g1_idx + g2_idx + 1) / 2
     text = (
-        alt.Chart(alt.Data(values=[{"y": y, "label": label}]))
+        alt.Chart(_internal_data([{"y": y, "label": label}]))
         .mark_text(
             align="center", fontSize=fontSize, dy=text_dy, **({"baseline": text_baseline} if text_baseline else {})
         )
@@ -948,7 +950,7 @@ def _pvalue_layer(
 
     if bracket_style == "bracket":
         left_tick = (
-            alt.Chart(alt.Data(values=[{"x": group1, "y": y, "y2": tick_y2}]))
+            alt.Chart(_internal_data([{"x": group1, "y": y, "y2": tick_y2}]))
             .mark_rule(**_rule_kwargs)
             .encode(
                 x=alt.X("x:N"),
@@ -957,7 +959,7 @@ def _pvalue_layer(
             )
         )
         right_tick = (
-            alt.Chart(alt.Data(values=[{"x": group2, "y": y, "y2": tick_y2}]))
+            alt.Chart(_internal_data([{"x": group2, "y": y, "y2": tick_y2}]))
             .mark_rule(**_rule_kwargs)
             .encode(
                 x=alt.X("x:N"),
@@ -1271,7 +1273,7 @@ def add_comparisons(
         _describe_all,
         _make_record,
         _pair_effect,
-        _push_report,
+        _register_report,
         _render_report,
         _run_omnibus,
     )
@@ -1490,7 +1492,7 @@ def add_comparisons(
         correction=effective_correction,
         pvalues_provided=pvalues is not None,
     )
-    _push_report(record)
+    marker = _register_report(record)
     if report or save:
         report_text = _render_report(record)
         if report:
@@ -1503,8 +1505,10 @@ def add_comparisons(
 
     if not annotation_layers:
         # no label and no brackets → report-only; return an invisible layer.
-        annotation_layers.append(alt.Chart(alt.Data(values=[{}])).mark_point(opacity=0))
-    return cast(alt.LayerChart, alt.layer(*annotation_layers))
+        annotation_layers.append(alt.Chart(_internal_data([{}])).mark_point(opacity=0))
+    # Tag the layer with the record's marker name so save() can match this record back to
+    # the chart it annotates (the name survives ``+``; it's stripped from the written JSON).
+    return cast(alt.LayerChart, alt.layer(*annotation_layers).properties(name=marker))
 
 
 # DEPRECATED(remove in v2.0): add_pvalue() was renamed to add_comparisons() in v1.1.
@@ -1655,7 +1659,7 @@ def add_correlation(
     from datetime import datetime
     from pathlib import Path
 
-    from .statistics import _make_correlation_record, _push_report, _render_report, _run_correlation
+    from .statistics import _make_correlation_record, _register_report, _render_report, _run_correlation
     from .utils import ensure_polars
 
     if verbose:  # shortcut for the fullest readout; overrides the individual toggles
@@ -1696,7 +1700,9 @@ def add_correlation(
         # scale, and because the base chart is the first layer, its axis (titles, ticks)
         # wins the shared-axis resolution.  (Setting title=None nulls the base title;
         # axis=None suppresses the axis entirely — both wrong here.)
-        layers.append(alt.Chart(fit_df).mark_line(**mark_kwargs).encode(x=alt.X("_x:Q"), y=alt.Y("_y:Q")))
+        layers.append(
+            alt.Chart(_internal_data(fit_df)).mark_line(**mark_kwargs).encode(x=alt.X("_x:Q"), y=alt.Y("_y:Q"))
+        )
 
     # Corner readout.
     if position is not None:
@@ -1724,7 +1730,7 @@ def add_correlation(
 
     # Structured record → export metadata; printed/written on request.
     record = _make_correlation_record(result, xCol, yCol)
-    _push_report(record)
+    marker = _register_report(record)
     if report or save:
         report_text = _render_report(record)
         if report:
@@ -1736,5 +1742,6 @@ def add_correlation(
             (directory / f"dysonsphere_report_{ts}.txt").write_text(report_text + "\n", encoding="utf-8")
 
     if not layers:
-        layers.append(alt.Chart(alt.Data(values=[{}])).mark_point(opacity=0))
-    return cast(alt.LayerChart, alt.layer(*layers))
+        layers.append(alt.Chart(_internal_data([{}])).mark_point(opacity=0))
+    # Tag with the marker name so save() matches this record to its chart (stripped on write).
+    return cast(alt.LayerChart, alt.layer(*layers).properties(name=marker))

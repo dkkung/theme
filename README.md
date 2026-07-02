@@ -2,7 +2,7 @@
 
 An Altair configuration wrapper with perceptually uniform palettes and chart utilities for publication-ready figures.
 
-![thumbnail](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/thumbnail_light.png)
+![thumbnail](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/thumbnail.png)
 
 ## Installation
 
@@ -43,9 +43,7 @@ chart = (
 )
 
 ds.save(chart, "plots/myplot")
-# writes: plots/myplot_light.png, plots/myplot_light.svg
-#         plots/myplot_dark.png,  plots/myplot_dark.svg
-#         plots/myplot_vegalite.json
+# writes: plots/myplot.svg, plots/myplot.json   (SVG + JSON, light — the defaults)
 ```
 
 ---
@@ -364,9 +362,7 @@ All palettes are added to the Swatches panel as named groups (e.g. `blues`, `red
 
 ```python
 ds.save(chart, "plots/myplot")
-# writes: plots/myplot_light.png, plots/myplot_light.svg
-#         plots/myplot_dark.png,  plots/myplot_dark.svg
-#         plots/myplot_vegalite.json
+# writes: plots/myplot.svg, plots/myplot.json   (SVG + JSON, light — the defaults)
 ```
 
 **Always use `ds.save()` instead of `chart.save()`.** `ds.save()` is a wrapper around Altair's built-in save that runs several post-processing steps essential for correct rendering in dysonsphere-themed charts:
@@ -379,16 +375,22 @@ ds.save(chart, "plots/myplot")
 
 Calling `chart.save()` directly skips all of the above and will produce misaligned ticks and incorrect minor tick spacing in dysonsphere charts.
 
-`ds.save()` produces light and dark PNG and SVG files from a single call. A Vega-Lite JSON spec is also saved by default for full reproducibility. It accepts any Altair chart type — `Chart`, `LayerChart`, `FacetChart`, `HConcatChart`, `VConcatChart`, or `ConcatChart` — as well as a zero-argument callable that returns one.
+`ds.save()` writes a chart in one or more formats and background variants. **By default it writes SVG + the Vega-Lite JSON spec, light background only** — `myplot.svg` and `myplot.json`. The formats (`"svg"`/`"png"`/`"json"`) and backgrounds (`"light"`/`"dark"`) are set by `format` / `background` (a string or a list), each defaulting to the theme options `saveFormat` / `saveBackground` (so you can change the defaults globally or in `dysonsphere.toml`). A `_light`/`_dark` suffix is added **only when more than one background** is rendered. It accepts any Altair chart type — `Chart`, `LayerChart`, `FacetChart`, `HConcatChart`, `VConcatChart`, or `ConcatChart` — as well as a zero-argument callable that returns one.
 
 ```python
-ds.save(chart, "myplot", ppi=1200)                 # default PPI; reduce for faster exports
-ds.save(chart, "myplot", saveVegaSpec=False)       # skip the JSON spec
-ds.save(chart, "myplot", description="Figure 1")   # your own description, in SVG <desc>, PNG iTXt, and the JSON spec
-ds.save(chart, "myplot", saveMetadata=False)       # suppress the structured metadata block
-ds.save(chart, "myplot", background=["light"])     # light variant only
-ds.save(chart, "myplot", background=["dark"])      # dark variant only
+ds.save(chart, "myplot")                              # myplot.svg + myplot.json  (defaults)
+ds.save(chart, "myplot", format="png")                # myplot.png only
+ds.save(chart, "myplot", format=["svg", "png", "json"])
+ds.save(chart, "myplot", background=["light", "dark"])  # myplot_light.* + myplot_dark.*
+ds.save(chart, "myplot", ppi=600)                     # lower PPI for faster PNG exports
+ds.save(chart, "myplot", description="Figure 1")      # your own description, in SVG <desc>, PNG iTXt, and the JSON spec
+ds.save(chart, "myplot", saveMetadata=False)          # suppress the structured metadata block
+ds.save(chart, "myplot", maxRows=20000)               # allow bigger data (default cap 5000)
+ds.save(chart, "myplot", overrideMaxRows=True)        # remove the row cap entirely
+ds.theme(saveFormat=["svg", "png"], saveBackground="dark")  # change the save defaults globally
 ```
+
+Because every format renders through Altair's `chart.to_dict()`, which **inlines the data** (and the JSON embeds it for `ds.read(what="data")`), `ds.save()` blocks data over `maxRows` (default 5000) with a clear error rather than writing a huge file — raise `maxRows=` or pass `overrideMaxRows=True` to opt in.
 
 #### Metadata
 
@@ -396,15 +398,43 @@ By default, `ds.save()` embeds a machine-readable JSON block — `{"provenance":
 
 - **Vega-Lite JSON** — under `usermeta.dysonsphere` (merged into any `usermeta` you set yourself).
 - **SVG** — in a `<metadata id="dysonsphere">` element (CDATA).
-- **PNG** — in an `iTXt dysonsphere` chunk (read with e.g. `exiftool myplot_light.png`).
+- **PNG** — in an `iTXt dysonsphere` chunk (read with e.g. `exiftool myplot.png`).
 
 The block has these keys:
 
-- `provenance` — the generation facts as structured fields: `user`, `script`, `timestamp` (ISO-8601), `python`, `altair`, `dysonsphere`. (In a Jupyter notebook `script` is `<jupyter-notebook>`; if the OS exposes no username, `user` is `unknown_user`.)
-- `statistics` — the structured records from any [`add_comparisons()`](#adding-p-value-annotations) / `add_correlation()` calls (per-group descriptives, the omnibus result, the comparison test + correction method, and every comparison with exact p-values and effect sizes). Read it back with `json.load(open("myplot_vegalite.json"))["usermeta"]["dysonsphere"]["statistics"]` — no text parsing, and trivial to turn into CSV/TSV.
-- `report` — the same statistics rendered as a **human-readable table** (the descriptive + effect-size text), so you can read it straight out of the file. On by default (`embedReport=True`); set `embedReport=False` to keep just the structured block. In the SVG and PNG it's carried in its own readable channel (`<metadata id="dysonsphere-report">` / `iTXt dysonsphere-report`, real newlines) rather than escaped inside the JSON blob.
+- `provenance` — the generation facts as structured fields: `vegaliteChecksum` (a `sha256:` fingerprint of the chart's spec — same content ⇒ same checksum, so you can validate a file or spot duplicates), `exportIdentifier` (a `uuid4` shared by every file from one `ds.save()` call), `user`, `script`, `timestamp` (ISO-8601), `python`, `altair`, `dysonsphere`. (In a Jupyter notebook `script` is `<jupyter-notebook>`; if the OS exposes no username, `user` is `unknown_user`.)
+- `statistics` — the structured records from any [`add_comparisons()`](#adding-p-value-annotations) / `add_correlation()` calls (per-group descriptives, the omnibus result, the comparison test + correction method, and every comparison with exact p-values and effect sizes). Read it back with `json.load(open("myplot.json"))["usermeta"]["dysonsphere"]["statistics"]` — no text parsing, and trivial to turn into CSV/TSV. **Only the statistics whose annotations are actually on the saved chart are embedded**, so building a stats chart you never save can't leak into a later save; `ds.clear_stats()` drops any pending records if you want to reset (handy in notebooks).
+- `report` — a **container** of human-readable renderings, keyed by section: `report.provenance` (a "Generated by … using Python …, Altair …, dysonsphere …" sentence, always present) and `report.statistics` (the descriptive + effect-size text, present when the chart has any comparisons/correlations). So you can read the whole thing straight out of the file, and the nesting leaves room for future sections (`report.methods`, …) as non-breaking siblings. On by default (`embedReport=True`); set `embedReport=False` to keep just the structured block. In the SVG and PNG each section rides in its own readable channel (`<metadata id="dysonsphere-report-<section>">` / `iTXt dysonsphere-report-<section>`, real newlines) rather than escaped inside the JSON blob.
+- `theme` — the resolved `ds.theme()` arguments used for the figure (dysonsphere params, not Altair's), so the exact styling is recorded and reconstructable.
 
 None of this touches `description` — that stays your `description=` text only. (The report is also available standalone via `ds.add_comparisons(..., report=True)` to stdout or `save="dir"` to a `.txt`.)
+
+##### Reading it back
+
+`ds.read()` pulls the metadata back out of any exported PNG / SVG / JSON:
+
+```python
+ds.read("myplot.png")                     # prints the report table, returns the text
+ds.read("myplot.png", save="reports")     # + writes reports/dysonsphere_report_<ts>.txt
+ds.read("myplot.png", what="statistics")  # the structured records (exact floats)
+ds.read("myplot.json", what="metadata")   # the whole {provenance, statistics, theme, report} dict
+ds.read("myplot.json", what="data")       # the original data, rebuilt from the spec (JSON only)
+ds.read("myplot.json", what="data", output="pandas")   # or "duckdb" / "records"
+ds.read("myplot.json", what="data", dataset="all")     # multi-frame charts → {name: frame}
+```
+
+`what="report"` (default) even **re-renders the table from the records** if the prose wasn't embedded (`embedReport=False`), so it works on any dysonsphere-saved file. `what="data"` returns the **whole** frame Altair inlined into the JSON — every column you passed to `alt.Chart(df)`, including ones the chart never plotted (so mind what you hand it), dtypes re-inferred from JSON. dysonsphere's composite marks embed small internal sidecar datasets (bracket coords, mean/error bars, …); those are tagged and **filtered out**, so you get back just *your* data. `output` picks the form: `"polars"` (default), `"pandas"`, `"duckdb"` (a queryable relation), or `"records"` (raw `list[dict]`, no dataframe library needed) — `pandas`/`duckdb` are imported only if asked, not dependencies. If a chart genuinely layers **two of your own DataFrames**, `what="data"` **raises** rather than silently returning one; pass `dataset="all"` for a `{name: frame}` dict or `dataset="<name>"` for a specific one.
+
+`ds.load()` rebuilds the chart from the **Vega-Lite JSON** (the `.json` spec):
+
+```python
+chart = ds.load("myplot.json")            # composable Altair object; re-applies the saved theme
+chart + ds.add_comparisons(df, "g", "v", pairs)    # extend it, then ds.save() again
+ds.load("myplot.json", raw=True)          # the raw spec dict — re-renders pixel-identically
+ds.load("myplot.json", applyTheme=False)  # don't touch the active theme
+```
+
+By default `load()` returns a real, composable Altair object with the file's theme re-applied (which, like any `ds.theme()` call, **replaces the active theme globally**). It strips the theme `config` (Altair's schema is stricter than Vega-Lite's), so the styling comes from the re-applied theme; use `raw=True` for the untouched spec dict if you want a faithful re-render without touching the global theme. JSON only — PNG/SVG carry the metadata but not the full spec.
 
 The `description=` field is entirely yours: whatever you pass is stored verbatim (nothing appended) in the SVG `<desc>`, the PNG `Description` chunk, and the JSON `description` key — so it stays a clean chart label / aria-label.
 
@@ -462,7 +492,7 @@ alt.Chart(df).mark_circle().encode(
 | `outCol` | `"jitter_x"` | Output column name |
 | `seed` | `20220701` | Random seed |
 
-![transforms example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/transforms_example_light.png)
+![transforms example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/transforms_example.png)
 
 ### Custom marks
 
@@ -524,7 +554,7 @@ ds.save(alt.hconcat(left, right), "comparison")
 | `yTitle` | `yCol` | Y-axis title; `None` suppresses it |
 | `xTitle` | `xCol` | X-axis title; `None` suppresses it |
 
-![marks example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/marks_example_light.png)
+![marks example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/marks_example.png)
 
 ### Statistical annotations
 
@@ -596,7 +626,7 @@ ds.add_comparisons(
 
 For `notation`, a special `"test"` key sets the omnibus label's format (e.g. `notation={"test": "power"}`).
 
-![p-value example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/pairwise_example_light.png)
+![p-value example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/pairwise_example.png)
 
 #### Omnibus tests
 
@@ -620,7 +650,7 @@ chart + ds.add_comparisons(df, "group", "value", test="kruskal", categories=CATE
 
 The supported post-hocs are Tukey HSD and Dunnett (via `scipy`) plus **Dunn, Nemenyi, and Games-Howell**, which `dysonsphere` computes *in-house* (validated against `scikit-posthocs` and `pingouin`). Every `add_comparisons()` call also generates a descriptive + effect-size report that is appended to the metadata of files written by `ds.save()` (see `report`/`save`). For an omnibus test the report lists **all** pairwise post-hoc comparisons (the full table), not just the pairs you draw brackets for. Report p-values carry the **real computed value at a fixed 3 significant figures** (e.g. `P = 1.22e-11`) — never the floored `P < 0.001` used for on-plot labels, and independent of the on-plot `sigFigs` — so the metadata stays precise regardless of how you style the plot.
 
-![p-value omnibus example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/omnibus_example_light.png)
+![p-value omnibus example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/omnibus_example.png)
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -687,7 +717,7 @@ scatter + ds.add_correlation(
 )
 ```
 
-![correlation example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/correlation_example_light.png)
+![correlation example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/correlation_example.png)
 
 The three `method`s report different coefficients; only Pearson has a straight-line model, so `line=` is a no-op for the rank methods:
 
@@ -786,7 +816,7 @@ ds.add_multilabel(
 
 `categoryLabelHeight` is auto-computed as `ceil(fontSize × 0.6 × max_len × |sin(angle)| + fontSize × |cos(angle)|)` — the rotated bounding box of the longest label. Pass an explicit value to adjust the space between the category label text and the adjacent data rows.
 
-![Multilabel example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/multilabel_example_light.png)
+![Multilabel example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/multilabel_example.png)
 
 #### Spans
 
@@ -813,7 +843,7 @@ span=[{None: ["A", "B", "C"]}, {None: ["D", "E", "F"]}]
 
 The span section is always placed below all annotation rows. When `categoryLabel=True` and `categoryLabelPosition="bottom"`, the category label row is deferred to below the spans so the visual order is always: rows → spans → category labels.
 
-![Multilabel span example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/multilabel_span_example_light.png)
+![Multilabel span example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/multilabel_span_example.png)
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -896,7 +926,7 @@ shade = ds.add_shade(
 )
 ```
 
-![shade example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/shade_example_light.png)
+![shade example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/shade_example.png)
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -941,7 +971,7 @@ chart = base + ds.add_rule(10, axis="x", label="t₀", labelPosition="left")
 
 `labelAlign` controls where **along** the line the label is anchored; `labelPosition` controls which **side** of the line it sits on.
 
-![reference line example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/reference_line_example_light.png)
+![reference line example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/reference_line_example.png)
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -975,7 +1005,7 @@ chart = base + ds.add_text("Threshold = 5.0", position="bottomRight", offsetX=-4
 
 The `x` and `y` parameters accept three forms: a `float`/`int` for quantitative data coordinates (shares the main chart's scale automatically), a `str` for nominal band centers, or `alt.value(n)` to pin to a fixed pixel position independent of the data. The `position` preset sets `x`, `y`, `align`, and `baseline` automatically from `chartWidth` / `chartHeight` in the active theme; explicit arguments override any preset value.
 
-![text annotation example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/text_example_light.png)
+![text annotation example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/text_example.png)
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -1001,7 +1031,7 @@ The `x` and `y` parameters accept three forms: a `float`/`int` for quantitative 
 
 > **Note:** Always use `ds.save()` rather than `chart.save()`. `ds.save()` runs an SVG post-processing step that corrects the sub-pixel rounding Vega applies to tick transforms, ensuring consistent minor tick spacing at high DPI.
 
-![Nonlinear scale example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/nonlinear_example_light.png)
+![Nonlinear scale example](https://raw.githubusercontent.com/dkkung/dysonsphere/main/docs/nonlinear_example.png)
 
 #### Axis label reformatting
 

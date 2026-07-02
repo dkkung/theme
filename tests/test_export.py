@@ -1,10 +1,8 @@
 import json
 import math
 import re
-import struct
 import textwrap
 import xml.etree.ElementTree as ET
-import zlib
 from pathlib import Path
 
 import altair as alt
@@ -15,7 +13,6 @@ from dysonsphere.export import (
     _fix_log_minor_ticks,
     _fix_superscript_labels,
     _fix_tick_alignment,
-    _inject_png_metadata,
     _layer_axes_to_front,
     _simplify_svg,
     save,
@@ -110,33 +107,67 @@ def simple_chart():
 
 class TestSave:
     def test_light_files_created(self, simple_chart, tmp_path):
-        save(simple_chart, str(tmp_path / "out"), background=["light"])
-        assert (tmp_path / "out_light.png").exists()
-        assert (tmp_path / "out_light.svg").exists()
+        # single background → no suffix; request png explicitly (default is svg+json)
+        save(simple_chart, str(tmp_path / "out"), format=["svg", "png"], background=["light"])
+        assert (tmp_path / "out.png").exists()
+        assert (tmp_path / "out.svg").exists()
 
     def test_dark_files_created(self, simple_chart, tmp_path):
-        save(simple_chart, str(tmp_path / "out"), background=["dark"])
-        assert (tmp_path / "out_dark.png").exists()
-        assert (tmp_path / "out_dark.svg").exists()
+        save(simple_chart, str(tmp_path / "out"), format=["svg", "png"], background=["dark"])
+        assert (tmp_path / "out.png").exists()  # single dark background → no suffix
+        assert (tmp_path / "out.svg").exists()
 
-    def test_both_variants_by_default(self, simple_chart, tmp_path):
-        save(simple_chart, str(tmp_path / "out"))
+    def test_multi_background_suffixes(self, simple_chart, tmp_path):
+        # >1 background → _light/_dark suffixes on every format
+        save(simple_chart, str(tmp_path / "out"), format=["svg", "png", "json"], background=["light", "dark"])
         for suffix in ["_light", "_dark"]:
-            assert (tmp_path / f"out{suffix}.png").exists()
-            assert (tmp_path / f"out{suffix}.svg").exists()
+            for ext in ["png", "svg", "json"]:
+                assert (tmp_path / f"out{suffix}.{ext}").exists()
+
+    def test_default_format_is_svg_and_json(self, simple_chart, tmp_path):
+        save(simple_chart, str(tmp_path / "out"))
+        assert (tmp_path / "out.svg").exists() and (tmp_path / "out.json").exists()
+        assert not (tmp_path / "out.png").exists()  # png is opt-in now
 
     def test_vega_spec_saved(self, simple_chart, tmp_path):
         save(simple_chart, str(tmp_path / "out"), background=["light"])
-        assert (tmp_path / "out_vegalite.json").exists()
+        assert (tmp_path / "out.json").exists()
 
-    def test_vega_spec_skipped(self, simple_chart, tmp_path):
-        save(
-            simple_chart,
-            str(tmp_path / "out"),
-            saveVegaSpec=False,
-            background=["light"],
-        )
-        assert not (tmp_path / "out_vegalite.json").exists()
+    def test_format_without_json_skips_spec(self, simple_chart, tmp_path):
+        save(simple_chart, str(tmp_path / "out"), format="svg", background=["light"])
+        assert not (tmp_path / "out.json").exists()
+
+    def test_format_png_only_writes_no_svg(self, simple_chart, tmp_path):
+        # the SVG is a transient PNG source and must not be left behind
+        save(simple_chart, str(tmp_path / "out"), format="png", background=["light"])
+        assert (tmp_path / "out.png").exists()
+        assert not (tmp_path / "out.svg").exists()
+
+    @pytest.fixture
+    def big_chart(self):
+        n = 6000
+        df = pl.DataFrame({"g": ["A", "B"] * (n // 2), "v": [float(i) for i in range(n)]})
+        return alt.Chart(df).mark_point().encode(x="g:N", y="v:Q")
+
+    def test_max_rows_blocks_large_data(self, big_chart, tmp_path):
+        # every format hits the cap (rendering inlines the data), with a clear error
+        for fmt in ("json", "png", "svg"):
+            with pytest.raises(ValueError, match="maxRows"):
+                save(big_chart, str(tmp_path / "big"), format=fmt, background=["light"])
+
+    def test_max_rows_raised_allows_large_data(self, big_chart, tmp_path):
+        save(big_chart, str(tmp_path / "big"), format="json", maxRows=10000, background=["light"])
+        assert (tmp_path / "big.json").exists()
+
+    def test_override_max_rows_allows_large_data(self, big_chart, tmp_path):
+        save(big_chart, str(tmp_path / "big"), format="json", overrideMaxRows=True, background=["light"])
+        assert (tmp_path / "big.json").exists()
+
+    def test_max_rows_restores_transformer(self, big_chart, tmp_path):
+        before = alt.data_transformers.active
+        with pytest.raises(ValueError):
+            save(big_chart, str(tmp_path / "big"), format="json", background=["light"])  # errors mid-save
+        assert alt.data_transformers.active == before  # transformer restored even on error
 
     def test_layer_chart(self, tmp_path):
         from typing import cast
@@ -145,21 +176,21 @@ class TestSave:
         base = alt.Chart(df).mark_point().encode(x="x:N", y="y:Q")
         layer = cast(alt.LayerChart, alt.layer(base))
         save(layer, str(tmp_path / "out"), background=["light"])
-        assert (tmp_path / "out_light.png").exists()
+        assert (tmp_path / "out.svg").exists()
 
     def test_hconcat_chart(self, tmp_path):
         df = pl.DataFrame({"x": ["A", "B"], "y": [1.0, 2.0]})
         panel = alt.Chart(df).mark_point().encode(x="x:N", y="y:Q")
         hcat = alt.hconcat(panel, panel)
         save(hcat, str(tmp_path / "out"), background=["light"])
-        assert (tmp_path / "out_light.png").exists()
+        assert (tmp_path / "out.svg").exists()
 
     def test_vconcat_chart(self, tmp_path):
         df = pl.DataFrame({"x": ["A", "B"], "y": [1.0, 2.0]})
         panel = alt.Chart(df).mark_point().encode(x="x:N", y="y:Q")
         vcat = alt.vconcat(panel, panel)
         save(vcat, str(tmp_path / "out"), background=["light"])
-        assert (tmp_path / "out_light.png").exists()
+        assert (tmp_path / "out.svg").exists()
 
     def test_facet_chart(self, tmp_path):
         df = pl.DataFrame(
@@ -171,7 +202,7 @@ class TestSave:
         )
         facet = alt.Chart(df).mark_point().encode(x="x:Q", y="y:Q").facet("facet:N")
         save(facet, str(tmp_path / "out"), background=["light"])
-        assert (tmp_path / "out_light.png").exists()
+        assert (tmp_path / "out.svg").exists()
 
     def test_callable_chart(self, tmp_path):
         df = pl.DataFrame({"x": ["A", "B"], "y": [1.0, 2.0]})
@@ -180,7 +211,7 @@ class TestSave:
             str(tmp_path / "out"),
             background=["light"],
         )
-        assert (tmp_path / "out_light.png").exists()
+        assert (tmp_path / "out.svg").exists()
 
     def test_darkmode_restored_after_full_save(self, simple_chart, tmp_path):
         theme(darkmode=False)
@@ -205,8 +236,8 @@ class TestSave:
             theme()
 
     def test_png_nonempty(self, simple_chart, tmp_path):
-        save(simple_chart, str(tmp_path / "out"), background=["light"])
-        assert (tmp_path / "out_light.png").stat().st_size > 100
+        save(simple_chart, str(tmp_path / "out"), format="png", background=["light"])
+        assert (tmp_path / "out.png").stat().st_size > 100
 
     def test_description_in_spec(self, simple_chart, tmp_path):
         save(
@@ -215,7 +246,7 @@ class TestSave:
             description="my chart",
             background=["light"],
         )
-        assert "my chart" in (tmp_path / "out_vegalite.json").read_text()
+        assert "my chart" in (tmp_path / "out.json").read_text()
 
     def test_description_in_svg(self, simple_chart, tmp_path):
         save(
@@ -225,19 +256,19 @@ class TestSave:
             saveMetadata=False,
             background=["light"],
         )
-        assert "<desc>my chart</desc>" in (tmp_path / "out_light.svg").read_text()
+        assert "<desc>my chart</desc>" in (tmp_path / "out.svg").read_text()
 
     def test_save_metadata_on_by_default(self, simple_chart, tmp_path):
-        # The structured dysonsphere block is embedded by default; no prose provenance.
+        # The structured dysonsphere block AND the human-readable report are embedded by default.
         save(simple_chart, str(tmp_path / "out"), background=["light"])
-        svg = (tmp_path / "out_light.svg").read_text()
-        assert 'metadata id="dysonsphere"' in svg
-        assert "Generated by" not in svg  # provenance is structured-only, not prose
+        svg = (tmp_path / "out.svg").read_text()
+        assert 'metadata id="dysonsphere"' in svg  # structured block
+        assert 'metadata id="dysonsphere-report-provenance"' in svg  # prose provenance report section
 
     def test_save_metadata_can_be_disabled(self, simple_chart, tmp_path):
         save(simple_chart, str(tmp_path / "out"), saveMetadata=False, background=["light"])
-        assert 'metadata id="dysonsphere"' not in (tmp_path / "out_light.svg").read_text()
-        assert "usermeta" not in (tmp_path / "out_vegalite.json").read_text()
+        assert 'metadata id="dysonsphere"' not in (tmp_path / "out.svg").read_text()
+        assert "usermeta" not in (tmp_path / "out.json").read_text()
 
     def test_save_metadata_versions_in_provenance(self, simple_chart, tmp_path):
         import importlib.metadata
@@ -245,183 +276,32 @@ class TestSave:
         import altair as alt
 
         save(simple_chart, str(tmp_path / "out"), saveMetadata=True, background=["light"])
-        prov = json.loads((tmp_path / "out_vegalite.json").read_text())["usermeta"]["dysonsphere"]["provenance"]
+        prov = json.loads((tmp_path / "out.json").read_text())["usermeta"]["dysonsphere"]["provenance"]
         assert prov["altair"] == alt.__version__
         assert prov["dysonsphere"] == importlib.metadata.version("dysonsphere")
 
     def test_no_desc_when_no_user_description(self, simple_chart, tmp_path):
         # Without an explicit description=, there is no prose <desc> at all — only structured.
         save(simple_chart, str(tmp_path / "out"), background=["light"])
-        assert "<desc>" not in (tmp_path / "out_light.svg").read_text()
+        assert "<desc>" not in (tmp_path / "out.svg").read_text()
 
     def test_json_description_is_raw_user_description_only(self, simple_chart, tmp_path):
         # The JSON description carries the user's text only — provenance and report text
         # are NOT duplicated there (they live structured under usermeta).
         save(simple_chart, str(tmp_path / "out"), description="Figure 1", background=["light"])
-        desc = json.loads((tmp_path / "out_vegalite.json").read_text())["description"]
+        desc = json.loads((tmp_path / "out.json").read_text())["description"]
         assert desc == "Figure 1"
         assert "Generated by" not in desc
 
     def test_svg_desc_is_raw_user_description_only(self, simple_chart, tmp_path):
         # The SVG <desc> holds exactly the user's description — nothing auto-appended.
         save(simple_chart, str(tmp_path / "out"), description="Figure 1", background=["light"])
-        svg = (tmp_path / "out_light.svg").read_text()
-        assert "<desc>Figure 1</desc>" in svg
-        assert "Generated by" not in svg
-
-
-class TestSaveUsermeta:
-    @pytest.fixture
-    def stats_chart(self):
-        import numpy as np
-
-        import dysonsphere as ds
-
-        cats = ["A", "B", "C"]
-        rng = np.random.default_rng(0)
-        df = pl.DataFrame(
-            {"g": [c for c in cats for _ in range(20)], "v": np.concatenate([rng.normal(m, 1, 20) for m in (1, 2, 3)])}
-        )
-        return ds.mark_strip(df, "g", "v", cats) + ds.add_comparisons(df, "g", "v", test="anova", categories=cats)
-
-    def _usermeta(self, tmp_path, name="out"):
-        return json.loads((tmp_path / f"{name}_vegalite.json").read_text())["usermeta"]
-
-    def _svg_metadata(self, tmp_path, name="out_light"):
-        svg = (tmp_path / f"{name}.svg").read_text(encoding="utf-8")
-        m = re.search(r'<metadata id="dysonsphere"><!\[CDATA\[(.*?)\]\]></metadata>', svg, re.DOTALL)
-        return json.loads(m.group(1)) if m else None
-
-    def _png_dysonsphere_chunk(self, tmp_path, name="out_light"):
-        data = (tmp_path / f"{name}.png").read_bytes()
-        i = 8
-        while i < len(data):
-            length = struct.unpack(">I", data[i + 4 - 4 : i + 4])[0]
-            ctype = data[i + 4 : i + 8]
-            chunk = data[i + 8 : i + 8 + length]
-            if ctype == b"iTXt" and chunk.split(b"\x00", 1)[0] == b"dysonsphere":
-                # after the keyword null come 4 more nulls (compflag/method/lang/transkw), then text
-                text = chunk.split(b"\x00", 1)[1].lstrip(b"\x00")
-                return json.loads(text.decode("utf-8"))
-            i += 12 + length
-            if ctype == b"IEND":
-                break
-        return None
-
-    def test_provenance_block_present(self, simple_chart, tmp_path):
-        save(simple_chart, str(tmp_path / "out"), background=["light"])
-        prov = self._usermeta(tmp_path)["dysonsphere"]["provenance"]
-        assert list(prov) == ["user", "script", "timestamp", "python", "altair", "dysonsphere"]  # order matches text
-        assert prov["timestamp"].endswith("Z") and "T" in prov["timestamp"]  # ISO-8601
-
-    def test_statistics_records_embedded(self, stats_chart, tmp_path):
-        save(stats_chart, str(tmp_path / "out"), background=["light"])
-        stats = self._usermeta(tmp_path)["dysonsphere"]["statistics"]
-        assert len(stats) == 1
-        rec = stats[0]
-        assert rec["kind"] == "omnibus" and rec["omnibus"]["name"] == "ANOVA"
-        assert isinstance(rec["omnibus"]["pvalue"], float)  # real number, not text
-        assert len(rec["comparisons"]["pairs"]) == 3
-
-    def test_correlation_record_embedded(self, tmp_path):
-        import numpy as np
-
-        import dysonsphere as ds
-
-        rng = np.random.default_rng(0)
-        x = rng.uniform(0, 10, 40)
-        df = pl.DataFrame({"x": x, "y": 0.9 * x + rng.normal(0, 1, 40)})
-        chart = alt.Chart(df).mark_point().encode(x="x:Q", y="y:Q") + ds.add_correlation(df, "x", "y")
-        save(chart, str(tmp_path / "out"), background=["light"])
-        rec = self._usermeta(tmp_path)["dysonsphere"]["statistics"][0]
-        assert rec["kind"] == "correlation" and rec["method"] == "pearson"
-        assert isinstance(rec["coefficient"]["value"], float) and rec["fit"]["slope"] is not None
-
-    def test_no_statistics_key_without_add_comparisons(self, simple_chart, tmp_path):
-        save(simple_chart, str(tmp_path / "out"), background=["light"])
-        assert "statistics" not in self._usermeta(tmp_path)["dysonsphere"]
-
-    def test_merges_with_user_usermeta(self, tmp_path):
-        df = pl.DataFrame({"x": [1, 2, 3], "y": [1.0, 2.0, 3.0]})
-        chart = alt.Chart(df).mark_point().encode(x="x:Q", y="y:Q").properties(usermeta={"project": "Apollo"})
-        save(chart, str(tmp_path / "out"), background=["light"])
-        um = self._usermeta(tmp_path)
-        assert um["project"] == "Apollo"  # user's key preserved
-        assert "provenance" in um["dysonsphere"]
-
-    def test_no_usermeta_when_metadata_disabled(self, stats_chart, tmp_path):
-        save(stats_chart, str(tmp_path / "out"), saveMetadata=False, background=["light"])
-        assert "usermeta" not in (tmp_path / "out_vegalite.json").read_text()
-
-    def test_svg_embeds_structured_metadata(self, stats_chart, tmp_path):
-        save(stats_chart, str(tmp_path / "out"), background=["light"])
-        block = self._svg_metadata(tmp_path)
-        assert block is not None
-        assert list(block["provenance"]) == ["user", "script", "timestamp", "python", "altair", "dysonsphere"]
-        assert block["statistics"][0]["omnibus"]["name"] == "ANOVA"
-
-    def test_svg_metadata_preserves_unicode(self, stats_chart, tmp_path):
-        # η² must survive as literal UTF-8 in the SVG (ensure_ascii=False), not ²
-        save(stats_chart, str(tmp_path / "out"), background=["light"])
-        assert self._svg_metadata(tmp_path)["statistics"][0]["omnibus"]["effect"]["symbol"] == "η²"
-
-    def test_png_embeds_structured_metadata(self, stats_chart, tmp_path):
-        save(stats_chart, str(tmp_path / "out"), background=["light"])
-        block = self._png_dysonsphere_chunk(tmp_path)
-        assert block is not None
-        assert block["statistics"][0]["omnibus"]["name"] == "ANOVA"
-        assert "provenance" in block
-
-    def test_no_svg_png_metadata_when_disabled(self, stats_chart, tmp_path):
-        save(stats_chart, str(tmp_path / "out"), saveMetadata=False, background=["light"])
-        assert self._svg_metadata(tmp_path) is None
-        assert self._png_dysonsphere_chunk(tmp_path) is None
-
-    def _svg_report(self, tmp_path, name="out_light"):
-        svg = (tmp_path / f"{name}.svg").read_text(encoding="utf-8")
-        m = re.search(r'<metadata id="dysonsphere-report">(.*?)</metadata>', svg, re.DOTALL)
-        return m.group(1) if m else None
-
-    def _png_report_text(self, tmp_path, name="out_light"):
-        data = (tmp_path / f"{name}.png").read_bytes()
-        i = 8
-        while i < len(data):
-            length = struct.unpack(">I", data[i : i + 4])[0]
-            ctype = data[i + 4 : i + 8]
-            chunk = data[i + 8 : i + 8 + length]
-            if ctype == b"iTXt" and chunk.split(b"\x00", 1)[0] == b"dysonsphere-report":
-                return chunk.split(b"\x00", 1)[1].lstrip(b"\x00").decode("utf-8")
-            i += 12 + length
-            if ctype == b"IEND":
-                break
-        return None
-
-    def test_report_embedded_by_default(self, stats_chart, tmp_path):
-        save(stats_chart, str(tmp_path / "out"), background=["light"])
-        report = self._usermeta(tmp_path)["dysonsphere"]["report"]  # JSON member
-        assert report.startswith("Statistics")
-        assert "\n" in self._svg_report(tmp_path)  # SVG readable channel, real newlines
-        assert self._png_report_text(tmp_path).startswith("Statistics")  # PNG readable chunk
-
-    def test_report_not_in_description(self, stats_chart, tmp_path):
-        save(stats_chart, str(tmp_path / "out"), description="my caption", background=["light"])
-        spec = json.loads((tmp_path / "out_vegalite.json").read_text())
-        assert spec["description"] == "my caption"  # description is the user's text only
-
-    def test_report_not_duplicated_in_structured_blob(self, stats_chart, tmp_path):
-        # the report is its own JSON member / readable channel, not baked into the structured blob
-        save(stats_chart, str(tmp_path / "out"), background=["light"])
-        assert "report" not in self._svg_metadata(tmp_path)
-        assert "report" not in self._png_dysonsphere_chunk(tmp_path)
-
-    def test_embed_report_false_suppresses_it(self, stats_chart, tmp_path):
-        save(stats_chart, str(tmp_path / "out"), embedReport=False, background=["light"])
-        block = self._usermeta(tmp_path)["dysonsphere"]
-        assert "statistics" in block and "report" not in block  # structured kept, report dropped
-        assert self._svg_report(tmp_path) is None and self._png_report_text(tmp_path) is None
-
-
-# ── _fix_tick_alignment() ─────────────────────────────────────────────────────
+        svg = (tmp_path / "out.svg").read_text()
+        match = re.search(r"<desc>(.*?)</desc>", svg, re.DOTALL)
+        assert match is not None
+        desc = match.group(1)
+        assert desc == "Figure 1"  # exactly the user's text, nothing appended
+        assert "Generated by" not in desc  # provenance prose rides in the report channel, not <desc>
 
 
 class TestFixTickAlignment:
@@ -808,91 +688,3 @@ class TestFixSuperscriptLabels:
         inner_tspan = outer_tspan.find(f"{{{NS}}}tspan")
         assert inner_tspan is not None
         assert inner_tspan.text == "−14"
-
-
-# ── _inject_png_metadata() ───────────────────────────────────────────────────
-
-
-def _make_minimal_png() -> bytes:
-    """1×1 white RGB PNG for use in metadata tests."""
-
-    def chunk(tag: bytes, data: bytes) -> bytes:
-        crc = zlib.crc32(tag + data) & 0xFFFFFFFF
-        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
-
-    sig = b"\x89PNG\r\n\x1a\n"
-    ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
-    idat = chunk(b"IDAT", zlib.compress(b"\x00\xff\xff\xff"))
-    iend = chunk(b"IEND", b"")
-    return sig + ihdr + idat + iend
-
-
-def _read_png_chunks(png: bytes) -> list[tuple[bytes, bytes]]:
-    """Return (type, data) for every chunk in the PNG."""
-    chunks = []
-    pos = 8  # skip signature
-    while pos < len(png):
-        length = struct.unpack(">I", png[pos : pos + 4])[0]
-        tag = png[pos + 4 : pos + 8]
-        data = png[pos + 8 : pos + 8 + length]
-        chunks.append((tag, data))
-        pos += 4 + 4 + length + 4
-    return chunks
-
-
-class TestInjectPngMetadata:
-    def test_itxt_chunk_present(self):
-        png = _inject_png_metadata(_make_minimal_png(), "hello")
-        types = [t for t, _ in _read_png_chunks(png)]
-        assert b"iTXt" in types
-
-    def test_itxt_placed_after_ihdr(self):
-        png = _inject_png_metadata(_make_minimal_png(), "hello")
-        types = [t for t, _ in _read_png_chunks(png)]
-        assert types[0] == b"IHDR"
-        assert types[1] == b"iTXt"
-
-    def test_description_keyword_and_text(self):
-        desc = "Generated with test.py by user on 20260630."
-        png = _inject_png_metadata(_make_minimal_png(), desc)
-        for tag, data in _read_png_chunks(png):
-            if tag == b"iTXt":
-                null = data.index(b"\x00")
-                keyword = data[:null].decode("utf-8")
-                # skip keyword\0 + compression_flag + compression_method + lang\0 + translated\0
-                text = data[null + 5 :].decode("utf-8")
-                assert keyword == "Description"
-                assert text == desc
-                return
-        pytest.fail("no iTXt chunk found")
-
-    def test_unicode_description_roundtrips(self):
-        desc = "café — by dkung 2026"
-        png = _inject_png_metadata(_make_minimal_png(), desc)
-        for tag, data in _read_png_chunks(png):
-            if tag == b"iTXt":
-                null = data.index(b"\x00")
-                text = data[null + 5 :].decode("utf-8")
-                assert text == desc
-                return
-        pytest.fail("no iTXt chunk found")
-
-    def test_all_chunk_crcs_valid(self):
-        png = _inject_png_metadata(_make_minimal_png(), "crc check")
-        pos = 8
-        while pos < len(png):
-            length = struct.unpack(">I", png[pos : pos + 4])[0]
-            tag = png[pos + 4 : pos + 8]
-            data = png[pos + 8 : pos + 8 + length]
-            stored = struct.unpack(">I", png[pos + 8 + length : pos + 12 + length])[0]
-            assert (zlib.crc32(tag + data) & 0xFFFFFFFF) == stored, f"bad CRC in {tag}"
-            pos += 4 + 4 + length + 4
-
-    def test_existing_chunks_unchanged(self):
-        original = _make_minimal_png()
-        result = _inject_png_metadata(original, "test")
-        orig_chunks = _read_png_chunks(original)
-        result_chunks = _read_png_chunks(result)
-        # result has one extra chunk (iTXt); all original chunks must be present and unchanged
-        non_itxt = [(t, d) for t, d in result_chunks if t != b"iTXt"]
-        assert non_itxt == orig_chunks

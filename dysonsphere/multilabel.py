@@ -4,7 +4,7 @@ from typing import cast
 import altair as alt
 import polars as pl
 
-from .utils import count_n
+from .utils import _internal_data, count_n
 
 
 def _multilabel_layer(
@@ -344,7 +344,7 @@ def _multilabel_layer(
     label_text_align = "left" if labelAlign == "right" else "right"
     label_df = pl.DataFrame({"__label": row_order})
     row_labels = (
-        alt.Chart(label_df)
+        alt.Chart(_internal_data(label_df))
         .mark_text(fontSize=fontSize, align=label_text_align, baseline="middle")
         .encode(x=label_x, y=y_enc, text=alt.Text("__label:N"))
     )
@@ -357,7 +357,7 @@ def _multilabel_layer(
         # align="center" is required — without it Vega-Lite's vertical band
         # placement drifts relative to other marks on some versions.
         layers.append(
-            alt.Chart(pm_df)
+            alt.Chart(_internal_data(pm_df))
             .mark_text(fontSize=fontSize, align="center", baseline="middle")
             .encode(x=x_enc, y=y_enc, text=alt.Text("__value:N"))
         )
@@ -366,7 +366,7 @@ def _multilabel_layer(
     if text_rows:
         text_df = marks_df.filter(pl.col("__label").is_in(text_rows))
         layers.append(
-            alt.Chart(text_df)
+            alt.Chart(_internal_data(text_df))
             .mark_text(fontSize=fontSize, align="center", baseline="middle")
             .encode(x=x_enc, y=y_enc, text=alt.Text("__value:N"))
         )
@@ -400,7 +400,7 @@ def _multilabel_layer(
         symbol_dy = -fontSize * 0.1
 
         positive = (
-            alt.Chart(plus_df)
+            alt.Chart(_internal_data(plus_df))
             .mark_point(
                 shape=symbol,
                 filled=True,
@@ -412,7 +412,7 @@ def _multilabel_layer(
             .encode(x=x_enc, y=y_enc)
         )
         negative = (
-            alt.Chart(minus_df)
+            alt.Chart(_internal_data(minus_df))
             .mark_point(
                 shape=symbol,
                 filled=True,
@@ -505,7 +505,7 @@ def _multilabel_layer(
             lines_df = pl.DataFrame(line_rows)
             if orientation == "horizontal":
                 lines = (
-                    alt.Chart(lines_df)
+                    alt.Chart(_internal_data(lines_df))
                     # strokeDash=[0, 0] overrides the theme's dashedRule=True default.
                     .mark_rule(strokeWidth=strokeWidth, strokeDash=[0, 0])
                     .encode(
@@ -516,7 +516,7 @@ def _multilabel_layer(
                 )
             else:  # vertical
                 lines = (
-                    alt.Chart(lines_df)
+                    alt.Chart(_internal_data(lines_df))
                     .mark_line(strokeWidth=strokeWidth, strokeDash=[0, 0])
                     .encode(
                         x=x_enc,
@@ -531,7 +531,7 @@ def _multilabel_layer(
     if categoryLabel and not defer_cat_label:
         label_df = pl.DataFrame({"__category": categories})
         layers.append(
-            alt.Chart(label_df)
+            alt.Chart(_internal_data(label_df))
             .mark_text(
                 fontSize=fontSize,
                 angle=categoryLabelAngle % 360,
@@ -557,7 +557,7 @@ def _multilabel_layer(
         axisWidth_val = alt.theme.options.get("axisWidth", 0.25)
         darkmode_val = alt.theme.options.get("darkmode", False)
         span_color = "white" if darkmode_val else "black"
-        _one_row = {"values": [{}]}
+        _one_row = _internal_data([{}])  # 1-row internal data for the pixel-positioned span marks
 
         span_gap = rowHeight * 0.3 if spanGap is None else spanGap
         label_gap = 2.0
@@ -627,7 +627,7 @@ def _multilabel_layer(
             if span_lbl:
                 lbl_df = pl.DataFrame({"__slabel": [span_lbl]})
                 layers.append(
-                    alt.Chart(lbl_df)
+                    alt.Chart(_internal_data(lbl_df))
                     .mark_text(
                         fontSize=fontSize,
                         color=span_color,
@@ -646,7 +646,7 @@ def _multilabel_layer(
         chart_h += categoryLabelHeight or 0
         label_df = pl.DataFrame({"__category": categories})
         layers.append(
-            alt.Chart(label_df)
+            alt.Chart(_internal_data(label_df))
             .mark_text(
                 fontSize=fontSize,
                 angle=categoryLabelAngle % 360,

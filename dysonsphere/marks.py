@@ -5,7 +5,7 @@ import numpy as np
 import polars as pl
 
 from .transforms import add_beeswarm, add_jitter
-from .utils import ensure_polars
+from .utils import _internal_data, ensure_polars
 
 
 class _UnsetType:
@@ -176,7 +176,7 @@ def mark_violin(
         mark_kwargs["stroke"] = stroke
 
     violin = (
-        alt.Chart(violin_df)
+        alt.Chart(_internal_data(violin_df))
         .mark_line(**mark_kwargs)
         .encode(
             x=alt.X("__x:Q", scale=alt.Scale(domain=[0, chart_width]), axis=None),
@@ -367,7 +367,7 @@ def mark_strip(
     summary = df.group_by(xCol).agg([pl.col(yCol).mean().alias("__mean"), error_expr])
 
     errorbar_layer = (
-        alt.Chart(summary)
+        alt.Chart(_internal_data(summary))
         .mark_errorbar()
         .encode(
             x=x,

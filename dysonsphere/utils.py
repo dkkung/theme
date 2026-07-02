@@ -1,3 +1,5 @@
+from typing import Any
+
 import polars as pl
 
 
@@ -63,3 +65,30 @@ def ensure_polars(df: pl.DataFrame) -> pl.DataFrame:
     if type(df).__module__.startswith("pandas"):
         return pl.from_pandas(df)
     raise TypeError(f"Expected a polars.DataFrame or pandas.DataFrame, got {type(df).__name__}.")
+
+
+# ── Internal-data sentinel ───────────────────────────────────────────────────
+# dysonsphere's composite marks / annotations generate their own small "sidecar" data
+# (bracket coords, mean/error bars, KDE curves, labels, …).  Altair inlines each of those
+# as a separate named dataset in the saved spec, alongside the user's dataframe.  To let
+# export.read(what="data") return only the USER's frame(s), every internal data source is
+# tagged with this sentinel column; read() treats any dataset carrying it as internal.
+#
+# DISCIPLINE: any NEW code that builds a dysonsphere-generated data source for a chart layer
+# MUST route it through `_internal_data(...)` (i.e. `alt.Chart(_internal_data(rows_or_df))`).
+# Miss one, and that sidecar leaks as a phantom "user" dataframe on read.  See CLAUDE.md.
+_INTERNAL_COL = "__dysonsphere__"
+
+
+def _internal_data(data: "list[dict] | pl.DataFrame | Any") -> "Any":
+    """Tag dysonsphere-generated (non-user) chart data with the internal sentinel column.
+
+    Accepts a list of record dicts (returned as an ``alt.Data``) or a polars/pandas
+    DataFrame (returned as a polars DataFrame with the sentinel column added).  Pass the
+    result straight to ``alt.Chart(...)``.
+    """
+    import altair as alt
+
+    if isinstance(data, list):
+        return alt.Data(values=[{**dict(row), _INTERNAL_COL: 1} for row in data])
+    return ensure_polars(data).with_columns(pl.lit(1).alias(_INTERNAL_COL))
