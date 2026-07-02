@@ -4794,27 +4794,53 @@ def _find_illustrator_swatches() -> Path | None:
     return None
 
 
-def export_swatches(directory: str | Path | None = None) -> None:
+def export_swatches(
+    directory: str | Path | None = None,
+    palettes: list[str] | None = None,
+    name: str = "dysonsphere",
+) -> None:
     """
     Write a JSX script and an ASE swatch library for Adobe Illustrator to *directory*
     (default: current working directory).
 
-    Produces two files:
+    Produces two files (``name`` defaults to ``"dysonsphere"``):
 
-    - ``import_dysonsphere_palettes_to_illustrator.jsx`` — run via
-      File > Scripts > Other Script... to load all palettes into the active
+    - ``import_{name}_palettes_to_illustrator.jsx`` — run via
+      File > Scripts > Other Script... to load the selected palettes into the active
       document's Swatches panel as named groups.
-    - ``dysonsphere.ase`` — Adobe Swatch Exchange file containing all palettes as
+    - ``{name}.ase`` — Adobe Swatch Exchange file containing the selected palettes as
       named groups. Automatically copied to the Illustrator User Defined Swatches
       folder if it can be detected; otherwise copy it there manually. After restarting
-      Illustrator it appears under Open Swatch Library > User Defined > dysonsphere.
+      Illustrator it appears under Open Swatch Library > User Defined > {name}.
+
+    Parameters
+    ----------
+    directory:
+        Output directory for the two files. Defaults to the current working directory.
+    palettes:
+        Names of the palettes to export (keys of ``dysonsphere.colors``). ``None``
+        (default) exports every palette. Pass a non-empty list to export only a subset,
+        e.g. ``["reds", "blues", "redsblues"]``. Unknown names raise ``ValueError``.
+    name:
+        Base name for the generated files and the Illustrator swatch library. Defaults
+        to ``"dysonsphere"``.
     """
     dest_dir = Path(directory) if directory is not None else Path.cwd()
 
+    if palettes is None:
+        selected = colors
+    else:
+        if not palettes:
+            raise ValueError("palettes must be a non-empty list of palette names, or None to export all")
+        unknown = [p for p in palettes if p not in colors]
+        if unknown:
+            raise ValueError(f"unknown palette name(s): {unknown}; valid names are the keys of dysonsphere.colors")
+        selected = {p: colors[p] for p in palettes}
+
     # --- JSX: loads swatches into the active document ---
-    js_palettes = json.dumps(colors, indent=4)
+    js_palettes = json.dumps(selected, indent=4)
     jsx = f"""\
-// Adobe Illustrator script to import dysonsphere palettes as named swatch groups.
+// Adobe Illustrator script to import {name} palettes as named swatch groups.
 // Run via File > Scripts > Other Script...
 // For a persistent library that survives across sessions and documents, use the
 // dysonsphere.ase file that was generated alongside this script.
@@ -4838,7 +4864,7 @@ for (var _k in palettes) paletteCount++;
 var doc = app.documents.length > 0 ? app.activeDocument : app.documents.add();
 var existingGroups = doc.swatchGroups;
 for (var x = existingGroups.length - 1; x >= 0; x--) {{
-    if (existingGroups[x].name.indexOf("dysonsphere ") === 0 || palettes.hasOwnProperty(existingGroups[x].name)) {{
+    if (existingGroups[x].name.indexOf("{name} ") === 0 || palettes.hasOwnProperty(existingGroups[x].name)) {{
         existingGroups[x].remove();
     }}
 }}
@@ -4863,21 +4889,21 @@ alert("Loaded " + paletteCount + " palettes into the active document.\\n"
     + "For a persistent library: open the .ase file via\\n"
     + "Open Swatch Library > Other Library...");
 """
-    jsx_path = dest_dir / "import_dysonsphere_palettes_to_illustrator.jsx"
+    jsx_path = dest_dir / f"import_{name}_palettes_to_illustrator.jsx"
     jsx_path.write_text(jsx, encoding="utf-8")
     print(f"Created {jsx_path}")
 
     # --- ASE: persistent swatch library ---
-    ase_path = dest_dir / "dysonsphere.ase"
-    _write_ase(colors, ase_path)
+    ase_path = dest_dir / f"{name}.ase"
+    _write_ase(selected, ase_path)
     print(f"Created {ase_path}")
 
     swatches_dir = _find_illustrator_swatches()
     if swatches_dir is not None:
-        installed = swatches_dir / "dysonsphere.ase"
+        installed = swatches_dir / f"{name}.ase"
         shutil.copy(ase_path, installed)
         print(f"Installed to {installed}")
-        print("Restart Illustrator, then open via Open Swatch Library > User Defined > dysonsphere")
+        print(f"Restart Illustrator, then open via Open Swatch Library > User Defined > {name}")
     else:
         print(f"Illustrator Swatches folder not found — copy {ase_path.name} there manually.")
         print("Typical location: ~/Library/Application Support/Adobe/Adobe Illustrator <ver>/<locale>/Swatches/")
