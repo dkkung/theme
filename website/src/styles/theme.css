@@ -15,3 +15,14 @@
   --sl-color-accent: #3562b9; /* blues2[6]  */
   --sl-color-accent-high: #231e5b; /* blues2[10] */
 }
+
+/* dysonsphere charts are authored at the library's publication defaults (100x100 px, small
+   fonts/marks), which is tiny on the web. Scale the whole render up uniformly with `zoom` so
+   every proportion is preserved and the theme defaults are untouched. Tune the one value below.
+   (The chart's vega-embed export menu still exports the true, unscaled 100x100 spec.) */
+:root {
+  --ds-chart-zoom: 3;
+}
+.vega-embed {
+  zoom: var(--ds-chart-zoom);
+}
