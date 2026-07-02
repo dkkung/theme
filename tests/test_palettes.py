@@ -173,3 +173,37 @@ class TestExportSwatches:
         export_swatches()
         assert (tmp_path / "import_dysonsphere_palettes_to_illustrator.jsx").exists()
         assert (tmp_path / "dysonsphere.ase").exists()
+
+    def test_palettes_subset(self, tmp_path, monkeypatch):
+        from dysonsphere import palettes as p
+
+        monkeypatch.setattr(p, "_find_illustrator_swatches", lambda: None)
+        p.export_swatches(tmp_path, palettes=["reds", "blues"])
+        content = (tmp_path / "import_dysonsphere_palettes_to_illustrator.jsx").read_text()
+        assert '"reds"' in content and '"blues"' in content
+        assert '"greys"' not in content  # not selected
+        # ASE holds only the two groups: 2 * (group_start + group_end) + all their colors
+        raw = (tmp_path / "dysonsphere.ase").read_bytes()
+        (block_count,) = struct.unpack(">I", raw[8:12])
+        assert block_count == 2 * 2 + len(p.colors["reds"]) + len(p.colors["blues"])
+
+    def test_custom_name(self, tmp_path, monkeypatch):
+        from dysonsphere import palettes as p
+
+        monkeypatch.setattr(p, "_find_illustrator_swatches", lambda: None)
+        p.export_swatches(tmp_path, palettes=["reds"], name="myproj")
+        assert (tmp_path / "myproj.ase").exists()
+        assert (tmp_path / "import_myproj_palettes_to_illustrator.jsx").exists()
+        assert not (tmp_path / "dysonsphere.ase").exists()  # default name not used
+
+    def test_unknown_palette_raises(self, tmp_path):
+        from dysonsphere.palettes import export_swatches
+
+        with pytest.raises(ValueError, match="unknown palette name"):
+            export_swatches(tmp_path, palettes=["reds", "not_a_palette_xyz"])
+
+    def test_empty_palettes_raises(self, tmp_path):
+        from dysonsphere.palettes import export_swatches
+
+        with pytest.raises(ValueError, match="non-empty list"):
+            export_swatches(tmp_path, palettes=[])

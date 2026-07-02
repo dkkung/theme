@@ -338,14 +338,18 @@ See the [palette gallery](https://dkkung.github.io/dysonsphere/) for a visual ov
 ### Exporting palettes as swatches for Adobe Illustrator
 
 ```python
-ds.export_swatches()           # writes to the current directory
-ds.export_swatches("/my/dir")  # writes to a specific directory
+ds.export_swatches()                              # all palettes, to the current directory
+ds.export_swatches("/my/dir")                     # all palettes, to a specific directory
+ds.export_swatches(palettes=["reds", "blues"])    # only a subset of palettes
+ds.export_swatches(palettes=["reds"], name="myproject")  # custom library/file name
 ```
 
-This writes two files:
+This writes two files (`name` defaults to `dysonsphere`):
 
-- `import_dysonsphere_palettes_to_illustrator.jsx` — loads all palettes into the active document's Swatches panel as named groups.
-- `dysonsphere.ase` — an ASE (Adobe Swatch Exchange) library containing all palettes. Automatically copied to your Illustrator User Defined Swatches folder if it can be found; otherwise copy it there manually.
+- `import_{name}_palettes_to_illustrator.jsx` — loads the selected palettes into the active document's Swatches panel as named groups.
+- `{name}.ase` — an ASE (Adobe Swatch Exchange) library containing the selected palettes. Automatically copied to your Illustrator User Defined Swatches folder if it can be found; otherwise copy it there manually.
+
+By default every palette is exported; pass `palettes=[...]` (any keys of `ds.colors`) to export only a subset, and `name=` to rename the files and the Illustrator library.
 
 **One-time setup (persistent library):** If the ASE was installed automatically, restart Illustrator and open the library via **Open Swatch Library > User Defined > dysonsphere**. It will now be available in all documents without re-running any script.
 
