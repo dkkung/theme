@@ -26,7 +26,7 @@
 	import vegaEmbed from 'vega-embed';
 	import { EditorView, basicSetup } from 'codemirror';
 	import { python } from '@codemirror/lang-python';
-	import { oneDark } from '@codemirror/theme-one-dark';
+	import { githubLight, githubDark } from '@uiw/codemirror-theme-github';
 	import { Compartment } from '@codemirror/state';
 
 	const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v314.0.2/full/';
@@ -66,19 +66,17 @@ chart = (
 		const editorParent = document.getElementById('pg-editor') as HTMLElement;
 
 		// CodeMirror editor with Python highlighting; theme follows the site's light/dark toggle.
+		// GitHub theme to match the docs code blocks (Starlight's Expressive Code default);
+		// swaps light/dark with the site toggle.
 		const themeCompartment = new Compartment();
-		// Inherit the panel/page background rather than oneDark's own dark color.
-		const inheritBg = EditorView.theme({
-			'&': { backgroundColor: 'transparent' },
-			'.cm-gutters': { backgroundColor: 'transparent', border: 'none' },
-		});
+		const cmTheme = () => (isDark() ? githubDark : githubLight);
 		const editor = new EditorView({
 			doc: DEFAULT_CODE,
-			extensions: [basicSetup, python(), themeCompartment.of(isDark() ? oneDark : []), inheritBg],
+			extensions: [basicSetup, python(), themeCompartment.of(cmTheme())],
 			parent: editorParent,
 		});
 		new MutationObserver(() => {
-			editor.dispatch({ effects: themeCompartment.reconfigure(isDark() ? oneDark : []) });
+			editor.dispatch({ effects: themeCompartment.reconfigure(cmTheme()) });
 		}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 		const setStatus = (msg: string, kind = '') => {
