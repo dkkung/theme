@@ -1,12 +1,12 @@
 ---
 // Interactive dysonsphere playground: runs dysonsphere in the browser via Pyodide (WebAssembly)
-// and renders the result live with vega-embed. Loaded as an island on the /playground page.
+// and renders the result live with vega-embed. The editor is CodeMirror 6 with Python highlighting.
 ---
 
 <div id="ds-playground" class="pg">
 	<div class="pg__panel">
 		<div class="pg__label">Python</div>
-		<textarea id="pg-code" spellcheck="false"></textarea>
+		<div id="pg-editor"></div>
 		<div class="pg__toolbar">
 			<button id="pg-run" disabled>Run</button>
 			<span id="pg-status">Loading Python runtime…</span>
@@ -24,6 +24,10 @@
 
 <script>
 	import vegaEmbed from 'vega-embed';
+	import { EditorView, basicSetup } from 'codemirror';
+	import { python } from '@codemirror/lang-python';
+	import { oneDark } from '@codemirror/theme-one-dark';
+	import { Compartment } from '@codemirror/state';
 
 	const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v314.0.2/full/';
 
@@ -49,6 +53,8 @@ chart = (
 )
 `;
 
+	const isDark = () => document.documentElement.dataset.theme === 'dark';
+
 	async function initPlayground() {
 		const root = document.getElementById('ds-playground');
 		if (!root || root.dataset.booted) return;
@@ -56,9 +62,19 @@ chart = (
 
 		const statusEl = document.getElementById('pg-status') as HTMLElement;
 		const runBtn = document.getElementById('pg-run') as HTMLButtonElement;
-		const codeEl = document.getElementById('pg-code') as HTMLTextAreaElement;
 		const chartEl = document.getElementById('pg-chart') as HTMLElement;
-		codeEl.value = DEFAULT_CODE;
+		const editorParent = document.getElementById('pg-editor') as HTMLElement;
+
+		// CodeMirror editor with Python highlighting; theme follows the site's light/dark toggle.
+		const themeCompartment = new Compartment();
+		const editor = new EditorView({
+			doc: DEFAULT_CODE,
+			extensions: [basicSetup, python(), themeCompartment.of(isDark() ? oneDark : [])],
+			parent: editorParent,
+		});
+		new MutationObserver(() => {
+			editor.dispatch({ effects: themeCompartment.reconfigure(isDark() ? oneDark : []) });
+		}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 		const setStatus = (msg: string, kind = '') => {
 			statusEl.textContent = msg;
@@ -72,7 +88,7 @@ chart = (
 			setStatus('Running…');
 			runBtn.disabled = true;
 			try {
-				const spec = JSON.parse(runFn(codeEl.value));
+				const spec = JSON.parse(runFn(editor.state.doc.toString()));
 				await vegaEmbed(chartEl, spec, { actions: true, renderer: 'svg' });
 				setStatus('Rendered.', 'ok');
 			} catch (e) {
@@ -148,18 +164,13 @@ def _run(code):
 		color: var(--sl-color-gray-3);
 		border-bottom: 1px solid var(--sl-color-gray-5);
 	}
-	#pg-code {
-		width: 100%;
-		min-height: 22rem;
-		border: 0;
-		padding: 0.75rem;
-		font-family: var(--sl-font-mono, monospace);
+	/* CodeMirror renders its own DOM, so size it with global selectors. */
+	:global(#pg-editor .cm-editor) {
+		height: 22rem;
 		font-size: 0.8rem;
-		line-height: 1.5;
-		resize: vertical;
-		color: var(--sl-color-text);
-		background: var(--sl-color-bg);
-		outline: none;
+	}
+	:global(#pg-editor .cm-scroller) {
+		overflow: auto;
 	}
 	.pg__toolbar {
 		display: flex;
